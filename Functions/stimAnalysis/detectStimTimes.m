@@ -311,3 +311,7 @@ else
 
     stimInfo{channel_idx} = stimStruct;
 end
+
+assignin('base', 'paddedChannels', paddedChannels);
+
+end 
