@@ -17,6 +17,7 @@ function stimInfo = detectStimTimes(rawData, Params, channelNames, coords)
 % is structure has the following fields
 %      elecStimTimes : vector of electrical stimulation onset times (seconds)
 %      elecStimDur : vector of electrical stimulation duration (seconds)
+%      paddedChannels: vector of electrode indices where any stimulation time was 'padded' due to subthreshold stimulation artifacts
 
 % Set parameters 
 stimDetectionMethod = Params.stimDetectionMethod;
@@ -26,6 +27,7 @@ stimDur = Params.stimDuration;
 
 numChannels = size(rawData, 2);
 stimInfo = cell(numChannels, 1);
+paddedChannels = [];
 
 if strcmp(stimDetectionMethod, 'blanking')
 
@@ -187,6 +189,20 @@ for channel_idx = 1:numChannels
     elecStimTimes = elecStimTimes(keepIdx); % Keep only valid elements
     %}
 
+  %% PADDING 
+    % --------------------------------------------------
+    % This section identifies and 'pads' missing stimulation events
+    % by predicting when they should have occurred, based on expected inter-stimulation intervals.
+    % This helps to correct cases where some stimulation events are not detected
+    % due to subthreshold stimulation artifacts.
+    % Padding occurs only if:
+    %   - stimDetectionMethod is 'blanking'
+    %   - Params.padStimArtifacts is true
+    % --------------------------------------------------
+
+
+
+%%
     stimStruct = struct();
     stimStruct.elecStimTimes = elecStimTimes; 
     stimStruct.elecStimDur = repmat(stimDur, length(elecStimTimes), 1);
