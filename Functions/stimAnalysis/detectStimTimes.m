@@ -199,6 +199,48 @@ for channel_idx = 1:numChannels
     %   - stimDetectionMethod is 'blanking'
     %   - Params.padStimArtifacts is true
     % --------------------------------------------------
+ 
+  if strcmp(stimDetectionMethod, 'blanking')
+        originalStimTimes = elecStimTimes; % Saving elecStimTimes identified thus far for later comparison
+        
+  if length(elecStimTimes) > 5 % minimum number of stim times detected per channel for padding     
+        stim_intervals = diff(elecStimTimes);  
+
+        if isfield(Params, 'knownStimFrequency') && ~isempty(Params.knownStimFrequency)
+            if numel(Params.knownStimFrequency) == 1 % Only one electrode is stimulated
+                expected_interval = 1/Params.knownStimFrequency; % Global value
+            else
+                expected_interval = 1/Params.knownStimFrequency(channel_idx); % Individual value per electrode
+            end
+        else
+            [counts, edges] = histcounts(stim_intervals, 'BinWidth', 0.001); % TODO: confirm this bin width?
+            [~, max_count_idx] = max(counts); % Identifying most common interval (mode)
+            expected_interval = (edges(max_count_idx) + edges(max_count_idx+1))/2; % Center of the bin with the highest count is taken as the expected interval
+        end
+
+        start_idx = round(min(elecStimTimes) * Params.fs); % Start of window is index of first stimulation time
+        end_idx = size(rawData,1); % End of window is final index of recording
+
+        expected_interval_samples = round(expected_interval * Params.fs);
+        expected_stim_indices = start_idx:expected_interval_samples:end_idx;
+        expected_stim_times = expected_stim_indices / Params.fs;
+
+        half_interval_samples = round(expected_interval_samples / 2); % Constructing a window that is half the expected interval to pad only missing stimulation times
+        originalStimIndices = round(originalStimTimes * Params.fs);
+
+        unmatched_expected = [];
+        for i = 1:length(expected_stim_indices)
+            exp_idx = expected_stim_indices(i);
+            in_any_window = any(abs(exp_idx - originalStimIndices) <= half_interval_samples);
+            if ~in_any_window
+                unmatched_expected(end+1) = exp_idx;
+            end
+        end
+
+        padded_stim_times = unmatched_expected / Params.fs;
+        allStimTimes = unique(sort([originalStimTimes padded_stim_times]));
+        isOriginal = ismember(allStimTimes, originalStimTimes);
+
 
 
 
