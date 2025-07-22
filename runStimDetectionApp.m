@@ -296,7 +296,7 @@ while isvalid(stimDetectionAppObj)
             medianAbsDeviation = median(abs(channelData - mean(channelData)), 1);
             medianZscore = abs(channelData - median(channelData)) ./ medianAbsDeviation;
             plot(stimDetectionAppObj.UIAxes, timeStampInSec, medianZscore);
-            ylabel(stimDetectionAppObj.UIAxes, 'Median absolute deviation')
+            ylabel(stimDetectionAppObj.UIAxes, 'Median Z score')
         else 
             plot(stimDetectionAppObj.UIAxes, timeStampInSec, rawData.dat(:, channelIdxToPlot));
             ylabel(stimDetectionAppObj.UIAxes, 'Raw signal')
