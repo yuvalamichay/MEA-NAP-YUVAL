@@ -241,25 +241,73 @@ for channel_idx = 1:numChannels
         allStimTimes = unique(sort([originalStimTimes padded_stim_times]));
         isOriginal = ismember(allStimTimes, originalStimTimes);
 
+     % Annotate each stim event: type 'original' or 'padded'
+        stimTimeInfo = repmat(struct('time', [], 'type', '', 'dur', []), length(allStimTimes), 1);
+        for ii = 1:length(allStimTimes)
+            stimTimeInfo(ii).time = allStimTimes(ii);
+            stimTimeInfo(ii).type = isOriginal(ii) * "original" + ~isOriginal(ii) * "padded";
+            stimTimeInfo(ii).dur = stimDur;
+        end
 
+        elecStimTimes = [stimTimeInfo.time];
+        elecStimDur = [stimTimeInfo.dur];
 
+        % Track padded channels
+        if any(~isOriginal)
+            paddedChannels(end+1) = channel_idx;
+        end
 
-%%
+        fprintf('Channel %d: Added %d unmatched stim times (total: %d, originally detected: %d)\n', ...
+            channel_idx, length(elecStimTimes) - length(originalStimTimes), ...
+            length(elecStimTimes), length(originalStimTimes));
+    else
+        % No padding, just annotate detected events
+        allStimTimes = elecStimTimes;
+        stimTimeInfo = repmat(struct('time', [], 'type', '', 'dur', []), length(allStimTimes), 1);
+        for ii = 1:length(allStimTimes)
+            stimTimeInfo(ii).time = allStimTimes(ii);
+            stimTimeInfo(ii).type = "original";
+            stimTimeInfo(ii).dur = stimDur;
+        end
+        elecStimDur = [stimTimeInfo.dur];
+
+        fprintf('Channel %d: No padding needed (events detected: %d)\n', channel_idx, length(elecStimTimes));
+    end
+
+    % Assign output structure for this channel
     stimStruct = struct();
-    stimStruct.elecStimTimes = elecStimTimes; 
-    stimStruct.elecStimDur = repmat(stimDur, length(elecStimTimes), 1);
+    stimStruct.elecStimTimes = [stimTimeInfo.time];
+    stimStruct.elecStimDur = [stimTimeInfo.dur];
+    stimStruct.stimTimeInfo = stimTimeInfo;
     stimStruct.channelName = channelNames(channel_idx);
     stimStruct.coords = coords(channel_idx, :);
-    
-    if strcmp(stimDetectionMethod, 'blanking')
+
+    if exist('allStimTimesTemplate', 'var')
+        stimStruct.allStimTimesTemplate = allStimTimesTemplate;
+    end
+    if isfield(Params, 'padStimArtifacts') && Params.padStimArtifacts
+        stimStruct.originalStimTimes = originalStimTimes;
+    end
+
+    stimInfo{channel_idx} = stimStruct;
+else
+    % Not blanking or not padding: preserve existing structure
+    stimTimeInfo = repmat(struct('time', [], 'type', '', 'dur', []), length(elecStimTimes), 1);
+    for ii = 1:length(elecStimTimes)
+        stimTimeInfo(ii).time = elecStimTimes(ii);
+        stimTimeInfo(ii).type = "original";
+        stimTimeInfo(ii).dur = stimDur;
+    end
+
+    stimStruct = struct();
+    stimStruct.elecStimTimes = elecStimTimes;
+    stimStruct.elecStimDur = repmat(stimDur, length(elecStimTimes), 1);
+    stimStruct.stimTimeInfo = stimTimeInfo;
+    stimStruct.channelName = channelNames(channel_idx);
+    stimStruct.coords = coords(channel_idx, :);
+    if strcmp(stimDetectionMethod, 'blanking') && exist('allStimTimesTemplate', 'var')
         stimStruct.allStimTimesTemplate = allStimTimesTemplate;
     end
 
     stimInfo{channel_idx} = stimStruct;
-
-    
-    
 end
-
-end
-
