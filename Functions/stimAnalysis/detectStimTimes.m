@@ -268,9 +268,9 @@ for channel_idx = 1:numChannels
 
         elecStimTimes = [stimTimeStructs.time];
 
-        fprintf('Channel %d: Added %d unmatched stim times (total: %d, originally detected: %d)\n', ...
-            channel_idx, length(elecStimTimes) - length(originalStimTimes), ...
-            length(elecStimTimes), length(originalStimTimes));
+     %   fprintf('Channel %d: Added %d unmatched stim times (total: %d, originally detected: %d)\n', ...
+      %     channel_idx, length(elecStimTimes) - length(originalStimTimes), ...
+      %      length(elecStimTimes), length(originalStimTimes));
     elseif ~isempty(elecStimTimes)
         % No padding, just label detected events as 'original'
         allStimTimes = elecStimTimes;
@@ -288,7 +288,7 @@ for channel_idx = 1:numChannels
         'channelName', channelNames(channel_idx), ...
         'coords', coords(channel_idx, :) ...
     );
-    fprintf('Channel %d: No detected stimulation events, skipping padding.\n', channel_idx);
+ %   fprintf('Channel %d: No detected stimulation events, skipping padding.\n', channel_idx);
     continue
 end
     
@@ -298,6 +298,7 @@ end
     stimStruct.stimTimeInfo = stimTimeStructs;
     stimStruct.channelName = channelNames(channel_idx);
     stimStruct.coords = coords(channel_idx, :);
+    stimStruct.paddedChannels = paddedChannels;
 
     if strcmp(stimDetectionMethod, 'blanking')
         stimStruct.allStimTimesTemplate = allStimTimesTemplate;
