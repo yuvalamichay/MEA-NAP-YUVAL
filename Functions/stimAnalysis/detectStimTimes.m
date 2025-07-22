@@ -189,6 +189,20 @@ for channel_idx = 1:numChannels
     elecStimTimes = elecStimTimes(keepIdx); % Keep only valid elements
     %}
 
+ % Minimum stimulation times check
+    minStimEvents = 10; %
+
+    if length(elecStimTimes) < minStimEvents
+        stimInfo{channel_idx} = struct( ...
+            'elecStimTimes', [], ...
+            'elecStimDur', [], ...
+            'stimTimeInfo', [], ...
+            'channelName', channelNames(channel_idx), ...
+            'coords', coords(channel_idx, :) ...
+        );
+        continue
+    end
+
   %% PADDING 
     % --------------------------------------------------
     % This section identifies and 'pads' missing stimulation events
@@ -199,11 +213,11 @@ for channel_idx = 1:numChannels
     %   - stimDetectionMethod is 'blanking'
     %   - Params.padStimArtifacts is true
     % --------------------------------------------------
+
+ if strcmp(stimDetectionMethod, 'blanking')
  
-     if strcmp(stimDetectionMethod, 'blanking')
         originalStimTimes = elecStimTimes; % Saving elecStimTimes identified thus far for later comparison
        
-    if length(elecStimTimes) > 10 % minimum number of stim times detected per channel for padding     
         stim_intervals = diff(elecStimTimes); 
 
         if isfield(Params, 'knownStimFrequency') && ~isempty(Params.knownStimFrequency)
