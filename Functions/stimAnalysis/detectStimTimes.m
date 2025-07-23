@@ -209,9 +209,7 @@ for channel_idx = 1:numChannels
     % by predicting when they should have occurred, based on expected inter-stimulation intervals.
     % This helps to correct cases where some stimulation events are not detected
     % due to subthreshold stimulation artifacts.
-    % Padding occurs only if:
-    %   - stimDetectionMethod is 'blanking'
-    %   - Params.padStimArtifacts is true
+    % Padding occurs only if: stimDetectionMethod is 'blanking'
     % --------------------------------------------------
 
  if strcmp(stimDetectionMethod, 'blanking')
@@ -268,9 +266,9 @@ for channel_idx = 1:numChannels
 
         elecStimTimes = [stimTimeStructs.time];
 
-     %   fprintf('Channel %d: Added %d unmatched stim times (total: %d, originally detected: %d)\n', ...
-      %     channel_idx, length(elecStimTimes) - length(originalStimTimes), ...
-      %      length(elecStimTimes), length(originalStimTimes));
+        fprintf('Channel %d: Added %d unmatched stim times (total: %d, originally detected: %d)\n', ...
+            channel_idx, length(elecStimTimes) - length(originalStimTimes), ...
+            length(elecStimTimes), length(originalStimTimes));
     elseif ~isempty(elecStimTimes)
         % No padding, just label detected events as 'original'
         allStimTimes = elecStimTimes;
@@ -288,7 +286,7 @@ for channel_idx = 1:numChannels
         'channelName', channelNames(channel_idx), ...
         'coords', coords(channel_idx, :) ...
     );
- %   fprintf('Channel %d: No detected stimulation events, skipping padding.\n', channel_idx);
+    fprintf('Channel %d: No detected stimulation events, skipping padding.\n', channel_idx);
     continue
 end
     
@@ -302,9 +300,7 @@ end
 
     if strcmp(stimDetectionMethod, 'blanking')
         stimStruct.allStimTimesTemplate = allStimTimesTemplate;
-        if isfield(Params, 'padStimArtifacts') && Params.padStimArtifacts && exist('originalStimTimes', 'var')
-            stimStruct.originalStimTimes = originalStimTimes;
-        end
+        stimStruct.originalStimTimes = originalStimTimes;        
     end
 
     stimInfo{channel_idx} = stimStruct;
