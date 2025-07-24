@@ -97,8 +97,6 @@ if strcmp(stimDetectionMethod, 'blanking')
     %}
         medianAbsDeviation = median(abs(rawData - mean(rawData, 1)), 1);
         medianZscore = abs(rawData - median(rawData, 1)) ./ medianAbsDeviation;
-        % Min-max normalization of medianZscore (per channel)
-        medianZscoreNorm = (medianZscore - min(medianZscore, [], 1)) ./ (max(medianZscore, [], 1) - min(medianZscore, [], 1));
     % end 
 end
 
@@ -126,7 +124,7 @@ for channel_idx = 1:numChannels
 
         % TODO: this is not as good as the filtering approach... need to
         % have very long refractory period...
-        approxElecStimTimes = find(medianZscoreNorm(:, channel_idx) > stimThreshold) / Params.fs;
+        approxElecStimTimes = find(medianZscore(:, channel_idx) > stimThreshold) / Params.fs;
 
         keepIdx = true(size(approxElecStimTimes)); % Logical mask for keeping elements
         lastValidIdx = 1; % Track last valid stim time
