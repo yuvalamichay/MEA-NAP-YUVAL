@@ -239,13 +239,13 @@ for channel_idx = 1:numChannels
         expected_stim_indices = start_idx:expected_interval_samples:end_idx;
         expected_stim_times = expected_stim_indices / Params.fs;
 
-        half_interval_samples = round(expected_interval_samples / 2); % Constructing a window that is half the expected interval to pad only missing stimulation times
+        %half_interval_samples = round(expected_interval_samples / 2); % Constructing a window that is half the expected interval to pad only missing stimulation times
         originalStimIndices = round(originalStimTimes * Params.fs);
 
         unmatched_expected = [];
         for i = 1:length(expected_stim_indices)
             exp_idx = expected_stim_indices(i);
-            in_any_window = any(abs(exp_idx - originalStimIndices) <= half_interval_samples);
+            in_any_window = any(abs(exp_idx - originalStimIndices) <= stimRefPeriod);
             if ~in_any_window
                 unmatched_expected(end+1) = exp_idx;
             end
