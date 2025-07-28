@@ -23,6 +23,7 @@ function stimInfo = detectStimTimes(rawData, Params, channelNames, coords)
 stimDetectionMethod = Params.stimDetectionMethod;
 stimRefPeriod = Params.stimRefractoryPeriod; 
 stimDur = Params.stimDuration;
+Params.stimElectrodes = [21 31 41 51 61 71]; % Example electrode numbers hardcoded for now
 
 
 numChannels = size(rawData, 2);
@@ -189,19 +190,19 @@ for channel_idx = 1:numChannels
     elecStimTimes = elecStimTimes(keepIdx); % Keep only valid elements
     %}
 
- % Minimum stimulation times check
-    minStimEvents = 10; %
+ % Specify stimulation electrodes in Params (e.g., Params.stimElectrodes = [1 2 3];)
+stimElectrodes = Params.stimElectrodes;
 
-    if length(elecStimTimes) < minStimEvents
-        stimInfo{channel_idx} = struct( ...
-            'elecStimTimes', [], ...
-            'elecStimDur', [], ...
-            'stimTimeInfo', [], ...
-            'channelName', channelNames(channel_idx), ...
-            'coords', coords(channel_idx, :) ...
-        );
-        continue
-    end
+if ~ismember(channelNames(channel_idx), stimElectrodes)
+    stimInfo{channel_idx} = struct( ...
+        'elecStimTimes', [], ...
+        'elecStimDur', [], ...
+        'stimTimeInfo', [], ...
+        'channelName', channelNames(channel_idx), ...
+        'coords', coords(channel_idx, :) ...
+    );
+    continue
+end
 
   %% PADDING 
     % --------------------------------------------------
@@ -217,18 +218,18 @@ for channel_idx = 1:numChannels
         originalStimTimes = elecStimTimes; % Saving elecStimTimes identified thus far for later comparison
        
         stim_intervals = diff(elecStimTimes); 
-
-        if isfield(Params, 'knownStimFrequency') && ~isempty(Params.knownStimFrequency)
-            if numel(Params.knownStimFrequency) == 1 % Only one electrode is stimulated
-                expected_interval = 1/Params.knownStimFrequency; % Global value
-            else
-                expected_interval = 1/Params.knownStimFrequency(channel_idx); % Individual value per electrode
-            end
-        else
+        % 
+        % if isfield(Params, 'knownStimFrequency') && ~isempty(Params.knownStimFrequency)
+        %     if numel(Params.knownStimFrequency) == 1 % Only one electrode is stimulated
+        %         expected_interval = 1/Params.knownStimFrequency; % Global value
+        %     else
+        %         expected_interval = 1/Params.knownStimFrequency(channel_idx); % Individual value per electrode
+        %     end
+        % else
             [counts, edges] = histcounts(stim_intervals, 'BinWidth', 0.001); % TODO: confirm this bin width?
             [~, max_count_idx] = max(counts); % Identifying most common interval (mode)
             expected_interval = (edges(max_count_idx) + edges(max_count_idx+1))/2; % Center of the bin with the highest count is taken as the expected interval
-        end
+        % end
 
         start_idx = round(min(elecStimTimes) * Params.fs); % Start of window is index of first stimulation time
         end_idx = size(rawData,1); % End of window is final index of recording
@@ -239,11 +240,12 @@ for channel_idx = 1:numChannels
 
         %half_interval_samples = round(expected_interval_samples / 2); % Constructing a window that is half the expected interval to pad only missing stimulation times
         originalStimIndices = round(originalStimTimes * Params.fs);
+        stimRefPeriod_samples = round(stimRefPeriod * Params.fs);
 
         unmatched_expected = [];
         for i = 1:length(expected_stim_indices)
             exp_idx = expected_stim_indices(i);
-            in_any_window = any(abs(exp_idx - originalStimIndices) <= stimRefPeriod);
+            in_any_window = any(abs(exp_idx - originalStimIndices) <= stimRefPeriod_samples);
             if ~in_any_window
                 unmatched_expected(end+1) = exp_idx;
             end
