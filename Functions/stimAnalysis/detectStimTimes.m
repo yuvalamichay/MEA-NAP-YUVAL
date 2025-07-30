@@ -98,6 +98,8 @@ if strcmp(stimDetectionMethod, 'blanking')
     %}
         medianAbsDeviation = median(abs(rawData - mean(rawData, 1)), 1);
         medianZscore = abs(rawData - median(rawData, 1)) ./ medianAbsDeviation;
+        % Min-max normalization of medianZscore (per channel)
+        medianZscoreNorm = (medianZscore - min(medianZscore, [], 1)) ./ (max(medianZscore, [], 1) - min(medianZscore, [], 1));
     % end 
 end
 
@@ -125,7 +127,10 @@ for channel_idx = 1:numChannels
 
         % TODO: this is not as good as the filtering approach... need to
         % have very long refractory period...
-        approxElecStimTimes = find(medianZscore(:, channel_idx) > stimThreshold) / Params.fs;
+        % old version
+        %approxElecStimTimes = find(medianZscore(:, channel_idx) > stimThreshold) / Params.fs;
+        % medianZscoreversion
+       approxElecStimTimes = find(medianZscoreNorm(:, channel_idx) > stimThreshold) / Params.fs;
 
         keepIdx = true(size(approxElecStimTimes)); % Logical mask for keeping elements
         lastValidIdx = 1; % Track last valid stim time
@@ -204,7 +209,7 @@ if ~ismember(channelNames(channel_idx), stimElectrodes)
     continue
 end
 
-  %% PADDING 
+    %% PADDING 
     % --------------------------------------------------
     % This section identifies and 'pads' missing stimulation events
     % by predicting when they should have occurred, based on expected inter-stimulation intervals.
@@ -231,11 +236,16 @@ end
             expected_interval = (edges(max_count_idx) + edges(max_count_idx+1))/2; % Center of the bin with the highest count is taken as the expected interval
         % end
 
-        start_idx = round(min(elecStimTimes) * Params.fs); % Start of window is index of first stimulation time
+        first_stim_idx = round(min(elecStimTimes) * Params.fs); % Start of window is index of first stimulation time
         end_idx = size(rawData,1); % End of window is final index of recording
 
         expected_interval_samples = round(expected_interval * Params.fs);
-        expected_stim_indices = start_idx:expected_interval_samples:end_idx;
+
+        % Generate expected stim times forward and backward from the first detected stim time
+        expected_stim_indices_forward = first_stim_idx:expected_interval_samples:end_idx;
+        expected_stim_indices_backward = (first_stim_idx - expected_interval_samples):-expected_interval_samples:1;
+        expected_stim_indices = unique([fliplr(expected_stim_indices_backward) expected_stim_indices_forward]);
+        
         expected_stim_times = expected_stim_indices / Params.fs;
 
         %half_interval_samples = round(expected_interval_samples / 2); % Constructing a window that is half the expected interval to pad only missing stimulation times
