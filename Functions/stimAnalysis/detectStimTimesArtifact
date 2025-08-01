@@ -185,6 +185,11 @@ for channel_idx = 1:numChannels
         blankStarts = start_indices_hardcoded / Params.fs;
         blankEnds   = end_indices_hardcoded   / Params.fs;
 
+        % Calculate blank durations (seconds)
+        if length(blankStarts) == length(blankEnds)
+            blankDurations = blankEnds - blankStarts; % Standard case: starts and ends are paired
+        end
+
     else 
         error('No valid stimulus detection specified')
     end 
@@ -229,6 +234,7 @@ for channel_idx = 1:numChannels
     if strcmp(stimDetectionMethod, 'longblank')
         stimStruct.blankStarts = blankStarts; % Start times (seconds) of blanks >= 25 samples
         stimStruct.blankEnds   = blankEnds;   % End   times (seconds) of blanks >= 25 samples
+        stimStruct.blankDurations = blankDurations;
     end
 
     stimInfo{channel_idx} = stimStruct;
