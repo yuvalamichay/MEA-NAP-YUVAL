@@ -173,7 +173,7 @@ for channel_idx = 1:numChannels
         elecStimTimes = start_indices_valid / Params.fs;
 
         % Second pass: Use hardcoded min_duration = 25 samples
-        min_duration_hardcoded = 25;
+        min_duration_hardcoded = 37;
         valid_groups_hardcoded = find(counts >= min_duration_hardcoded);
 
         % Start indices for blanks >= 25 samples
@@ -185,10 +185,15 @@ for channel_idx = 1:numChannels
         blankStarts = start_indices_hardcoded / Params.fs;
         blankEnds   = end_indices_hardcoded   / Params.fs;
 
-        % Calculate blank durations (seconds)
-        if length(blankStarts) == length(blankEnds)
-            blankDurations = blankEnds - blankStarts; % Standard case: starts and ends are paired
-        end
+      % Calculate blank durations (seconds) and remove those > 0.05s
+if length(blankStarts) == length(blankEnds)
+    blankDurations = blankEnds - blankStarts; % Standard case: starts and ends are paired
+    % Find indices where duration <= 0.05 s
+    validIdx = blankDurations <= 0.05;
+    blankStarts = blankStarts(validIdx);
+    blankEnds = blankEnds(validIdx);
+    blankDurations = blankDurations(validIdx);
+end
 
     else 
         error('No valid stimulus detection specified')
@@ -241,3 +246,6 @@ for channel_idx = 1:numChannels
 end
 
 end
+
+
+
