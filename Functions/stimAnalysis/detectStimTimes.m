@@ -153,29 +153,48 @@ for channel_idx = 1:numChannels
 
         channelDat = rawData(:, channel_idx);
 
-        % Minimum duration of a run (currently in samples)
-        min_duration = round(Params.minBlankingDuration * Params.fs); % 25 works
-        
+        % First pass: Use Params.minBlankingDuration
+        min_duration = round(Params.minBlankingDuration * Params.fs);
+
         % Find where values change
-        change_points = [1; diff(channelDat) ~= 0]; % [true (diff(channelDat) ~= 0)];
-        
-        % Assign group IDs to each run of constant value
+        change_points = [1; diff(channelDat) ~= 0];
         group_id = cumsum(change_points);
-        
-        % Count length of each run
         counts = accumarray(group_id(:), 1);
-        
+
         % Find which groups meet the minimum duration
         valid_groups = find(counts >= min_duration);
-        
-        % Find start indices of each group
+
+        % Find start indices and end indices of each group
         [~, start_indices] = unique(group_id, 'first');
+        [~, end_indices] = unique(group_id, 'last');
         
         % Select only those with valid length
-        start_indices = start_indices(ismember(group_id(start_indices), valid_groups));
+        start_indices_valid = start_indices(ismember(group_id(start_indices), valid_groups));
+        elecStimTimes = start_indices_valid / Params.fs;
 
-        elecStimTimes = start_indices / Params.fs;
+        % Second pass: Use hardcoded min_duration 
+        min_duration_hardcoded = 37;
+        valid_groups_hardcoded = find(counts >= min_duration_hardcoded);
 
+        % Start indices for harcoded blanks
+        start_indices_hardcoded = start_indices(ismember(group_id(start_indices), valid_groups_hardcoded));
+        % End indices for hardcoded blanks 
+        end_indices_hardcoded   = end_indices(ismember(group_id(end_indices), valid_groups_hardcoded));
+
+        % Save these in seconds
+        blankStarts = start_indices_hardcoded / Params.fs;
+        blankEnds   = end_indices_hardcoded   / Params.fs;
+
+       % Calculate blank durations (seconds) and remove those > 0.05s 
+        if length(blankStarts) == length(blankEnds)
+        blankDurations = blankEnds - blankStarts; 
+   
+       % Find indices where duration <= 0.05 s
+        validIdx = blankDurations <= 0.05;
+        blankStarts = blankStarts(validIdx);
+        blankEnds = blankEnds(validIdx);
+        blankDurations = blankDurations(validIdx);
+    end
 
     else 
         error('No valid stimulus detection specified')
@@ -185,9 +204,7 @@ for channel_idx = 1:numChannels
     % V1 : Slow 
     %{
     for stimIdx = 1:length(elecStimTimes)
-        
         stimTime = elecStimTimes(stimIdx);
-
         if ~isnan(stimTime)
             removeIndex = find( ...
                  (elecStimTimes > stimTime) & ...
@@ -195,16 +212,13 @@ for channel_idx = 1:numChannels
                 );
             elecStimTimes(removeIndex) = nan;
         end
-
     end
     elecStimTimes = elecStimTimes(~isnan(elecStimTimes));
     %}
 
     % V2: Faster
-    %
     keepIdx = true(size(elecStimTimes)); % Logical mask for keeping elements
     lastValidIdx = 1; % Track last valid stim time
-    
     for stimIdx = 2:length(elecStimTimes)
         if elecStimTimes(stimIdx) <= elecStimTimes(lastValidIdx) + stimRefPeriod
             keepIdx(stimIdx) = false; % Mark for removal
@@ -213,7 +227,6 @@ for channel_idx = 1:numChannels
         end
     end
     elecStimTimes = elecStimTimes(keepIdx); % Keep only valid elements
-    %}
 
     stimStruct = struct();
     stimStruct.elecStimTimes = elecStimTimes; 
@@ -224,12 +237,13 @@ for channel_idx = 1:numChannels
     if strcmp(stimDetectionMethod, 'blanking')
         stimStruct.allStimTimesTemplate = allStimTimesTemplate;
     end
+    if strcmp(stimDetectionMethod, 'longblank')
+        stimStruct.blankStarts = blankStarts; % Start times (seconds) of hardcoded blanks 
+        stimStruct.blankEnds   = blankEnds;   % End   times (seconds) of hardcoded blanks 
+        stimStruct.blankDurations = blankDurations;
+    end
 
     stimInfo{channel_idx} = stimStruct;
-
-    
-    
 end
 
 end
-
