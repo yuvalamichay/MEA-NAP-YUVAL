@@ -357,7 +357,14 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     psth_bin_width_s = 0.001;            % 1ms bin width for PSTH
     num_baseline_psths = 100;            % Number of baseline PSTHs 
     baseline_duration_s = psth_window_s(2) - psth_window_s(1);  % Match analysis window duration
-    artifact_window_ms = Params.stimRemoveSpikesWindow * 1000;  % Convert from seconds to ms
+    % Convert stimRemoveSpikesWindow from seconds to ms and ensure it's an array
+    if length(Params.stimRemoveSpikesWindow) == 1
+        % If single value, create window from 0 to that value (e.g., 0.002s -> [0, 2]ms)
+        artifact_window_ms = [0, Params.stimRemoveSpikesWindow * 1000];
+    else
+        % If already an array, convert to ms
+        artifact_window_ms = Params.stimRemoveSpikesWindow * 1000;
+    end
     
     % Loop through each stimulation pattern
     for patternIdx = 1:length(spikeData.stimPatterns)
