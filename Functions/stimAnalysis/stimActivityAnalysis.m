@@ -387,6 +387,15 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         
         % Loop through each channel
         for channelIdx = 1:numChannels
+            % Exclude stimulated channels for the current pattern
+            if isfield(spikeData, 'stimInfo') && ...
+               channelIdx <= length(spikeData.stimInfo) && ...
+               isfield(spikeData.stimInfo{channelIdx}, 'pattern') && ...
+               ~isempty(spikeData.stimInfo{channelIdx}.pattern) && ...
+               spikeData.stimInfo{channelIdx}.pattern == patternIdx
+                continue; % Skip analysis for stimulated channels
+            end
+
             % Extract spike times for current channel
             if channelIdx > length(spikeData.spikeTimes) || ...
                isempty(spikeData.spikeTimes{channelIdx}) || ...
@@ -483,8 +492,8 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             sgtitle(sprintf('Pattern %d | Channel %d | Peak Rate: %.1f Hz | Corrected AUC: %.3f', ...
                 patternIdx, channel_id, resp_metrics.peak_firing_rate, auc_corrected), 'FontWeight', 'bold');
             
-            % Subplot 1: Spike Raster Plot
-            ax1 = subplot(2,2,1); hold on;
+            % Subplot 1 (top right): Spike Raster Plot
+            ax1 = subplot(2, 2, 2); hold on;
             for trial_idx = 1:length(response.spikeTimes_byEvent)
                 trial_spikes_s = response.spikeTimes_byEvent{trial_idx};
                 if ~isempty(trial_spikes_s)
@@ -500,8 +509,8 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             title('Spike Raster (Response)');
             grid on;
             
-            % Subplot 2: Response vs Baselines comparison
-            ax2 = subplot(2,2,2); hold on;
+            % Subplot 2 (bottom right): Response vs Baselines comparison
+            ax2 = subplot(2, 2, 4); hold on;
             baseline_time_ms = (base_metrics.time_vector_s - current_baseline_window_s(1)) * 1000;
             for i = 1:num_baseline_psths
                 plot(baseline_time_ms, all_baseline_psth_smooth(i, :), ...
@@ -517,8 +526,8 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             legend([p1_diag, p2_diag], 'Response', 'Mean Baseline', 'Location', 'Best');
             grid on;
             
-            % Subplot 3: Smoothed response PSTH with metrics
-            ax3 = subplot(2,2,3); hold on;
+            % Subplot 3 (left): Smoothed response PSTH with metrics
+            ax3 = subplot(2, 2, [1, 3]); hold on;
             edges_s = psth_window_s(1):psth_bin_width_s:psth_window_s(2);
             bar(edges_s * 1000, response.psth_histogram, 1, ...
                 'FaceColor', 0.7*[1 1 1], 'EdgeColor', 0.8*[1 1 1], 'HandleVisibility', 'off');
@@ -546,16 +555,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             legend('Location', 'northeast');
             grid on;
             
-            % Subplot 4: Adaptive kernel bandwidth
-            ax4 = subplot(2,2,4);
-            plot(resp_metrics.time_vector_s * 1000, resp_metrics.kernel_bandwidth_s * 1000, ...
-                'b-', 'LineWidth', 2);
-            ylabel('Bandwidth (ms)');
-            xlabel('Time from stimulus (ms)');
-            title('Adaptive Kernel Bandwidth (Response)');
-            grid on;
-            
-            linkaxes([ax1, ax2, ax3, ax4], 'x');
+            linkaxes([ax1, ax2, ax3], 'x');
             xlim(psth_window_ms);
             
             % Save plot
