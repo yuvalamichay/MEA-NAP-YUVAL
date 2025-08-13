@@ -348,6 +348,234 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     figPath = fullfile(figFolder, figName);
     pipelineSaveFig(figPath, Params.figExt, Params.fullSVG, oneFigureHandle)
 
-
+    %% Plot individual PSTHs
+    % Integrated PSTH analysis for individual electrodes per stimulation pattern
+    % Based on batch_psth_baseline_analysis.m functionality
+    
+    % PSTH Analysis Parameters
+    psth_window_s = [0, 0.02];           % 20ms analysis window post-stimulus
+    psth_bin_width_s = Params.rasterBinWidth;  % Use MEA-NAP raster bin width
+    num_baseline_psths = 100;            % Number of baseline PSTHs 
+    baseline_duration_s = psth_window_s(2) - psth_window_s(1);  % Match analysis window duration
+    artifact_window_ms = Params.stimRemoveSpikesWindow * 1000;  % Convert from seconds to ms
+    
+    % Loop through each stimulation pattern
+    for patternIdx = 1:length(spikeData.stimPatterns)
+        stimTimes = spikeData.stimPatterns{patternIdx};  % Get stim times for this pattern
+        
+        if isempty(stimTimes)
+            continue;  % Skip if no stimulation times for this pattern
+        end
+        
+        % Create pattern-specific output folder
+        patternFolderName = sprintf('Pattern_%d', patternIdx);
+        patternFigFolder = fullfile(figFolder, patternFolderName);
+        if ~exist(patternFigFolder, 'dir')
+            mkdir(patternFigFolder);
+        end
+        
+        % Initialize storage for this pattern's results
+        networkResponse = [];
+        valid_channel_count = 0;
+        
+        % Loop through each channel
+        for channelIdx = 1:numChannels
+            % Extract spike times for current channel
+            if channelIdx > length(spikeData.spikeTimes) || ...
+               isempty(spikeData.spikeTimes{channelIdx}) || ...
+               ~isfield(spikeData.spikeTimes{channelIdx}, Params.SpikesMethod)
+                continue;  % Skip if no spike data
+            end
+            
+            all_spike_times_s = spikeData.spikeTimes{channelIdx}.(Params.SpikesMethod);
+            if isempty(all_spike_times_s)
+                continue;  % Skip if no spikes
+            end
+            
+            % Remove spikes within artifact window for each stimulus
+            spikeTimes_cleaned_s = all_spike_times_s;
+            for stimIdx = 1:length(stimTimes)
+                stimTime = stimTimes(stimIdx);
+                spikeTimes_cleaned_s = spikeTimes_cleaned_s(...
+                    spikeTimes_cleaned_s < (stimTime + artifact_window_ms(1)/1000) | ...
+                    spikeTimes_cleaned_s >= (stimTime + artifact_window_ms(2)/1000));
+            end
+            spikeTimes_cleaned_s = sort(spikeTimes_cleaned_s(:));
+            
+            % Calculate response PSTH
+            [response, resp_metrics] = calculate_psth_metrics(...
+                spikeTimes_cleaned_s, stimTimes, psth_window_s, psth_bin_width_s);
+            
+            if isempty(response.psth_samples)
+                continue;  % Skip if no spikes in response window
+            end
+            
+            % Calculate multiple baseline PSTHs
+            baseline_aucs = zeros(num_baseline_psths, 1);
+            all_baseline_psth_smooth = [];
+            
+            for i = 1:num_baseline_psths
+                % Define baseline window moving backwards from stimulus
+                start_s = -(i * baseline_duration_s);
+                end_s = -((i-1) * baseline_duration_s);
+                current_baseline_window_s = [start_s, end_s];
+                
+                % Apply artifact blanking to baseline window
+                spikeTimes_cleaned_baseline_s = spikeTimes_cleaned_s;
+                blank_start_offset_s = start_s + artifact_window_ms(1)/1000;
+                blank_end_offset_s = start_s + artifact_window_ms(2)/1000;
+                
+                for stimIdx = 1:length(stimTimes)
+                    stimTime = stimTimes(stimIdx);
+                    spikeTimes_cleaned_baseline_s = spikeTimes_cleaned_baseline_s(...
+                        spikeTimes_cleaned_baseline_s < (stimTime + blank_start_offset_s) | ...
+                        spikeTimes_cleaned_baseline_s >= (stimTime + blank_end_offset_s));
+                end
+                
+                [~, base_metrics] = calculate_psth_metrics(...
+                    spikeTimes_cleaned_baseline_s, stimTimes, current_baseline_window_s, psth_bin_width_s);
+                baseline_aucs(i) = base_metrics.auc;
+                
+                if isempty(all_baseline_psth_smooth)
+                    all_baseline_psth_smooth = zeros(num_baseline_psths, length(base_metrics.psth_smooth));
+                end
+                all_baseline_psth_smooth(i, :) = base_metrics.psth_smooth;
+            end
+            
+            % Calculate baseline-corrected metrics
+            mean_baseline_auc = mean(baseline_aucs);
+            auc_corrected = resp_metrics.auc - mean_baseline_auc;
+            mean_baseline_psth = mean(all_baseline_psth_smooth, 1);
+            
+            % Decay analysis using half-max from peak
+            [Rmax, Rmax_idx] = max(resp_metrics.psth_smooth);
+            halfRmax = Rmax / 2;
+            halfRmax_idx = find(resp_metrics.psth_smooth(Rmax_idx:end) <= halfRmax, 1, 'first');
+            
+            if ~isempty(halfRmax_idx)
+                halfRmax_idx = halfRmax_idx + Rmax_idx - 1;
+                halfRmax_time_s = resp_metrics.time_vector_s(halfRmax_idx);
+                halfRmax_val = resp_metrics.psth_smooth(halfRmax_idx);
+            else
+                halfRmax_time_s = NaN;
+                halfRmax_val = NaN;
+            end
+            
+            % Generate PSTH plot for this channel
+            fig = figure('Position', [100 100 1200 900], 'Visible', 'off');
+            psth_window_ms = psth_window_s * 1000;
+            
+            % Get channel ID (use electrode info if available, otherwise use index)
+            if isfield(spikeData, 'stimInfo') && channelIdx <= length(spikeData.stimInfo) && ...
+               isfield(spikeData.stimInfo{channelIdx}, 'channelName')
+                channel_id = spikeData.stimInfo{channelIdx}.channelName;
+            else
+                channel_id = channelIdx;  % Fallback to channel index
+            end
+            
+            sgtitle(sprintf('Pattern %d | Channel %d | Peak Rate: %.1f Hz | Corrected AUC: %.3f', ...
+                patternIdx, channel_id, resp_metrics.peak_firing_rate, auc_corrected), 'FontWeight', 'bold');
+            
+            % Subplot 1: Spike Raster Plot
+            ax1 = subplot(2,2,1); hold on;
+            for trial_idx = 1:length(response.spikeTimes_byEvent)
+                trial_spikes_s = response.spikeTimes_byEvent{trial_idx};
+                if ~isempty(trial_spikes_s)
+                    plot(trial_spikes_s * 1000, trial_idx * ones(size(trial_spikes_s)), ...
+                        'r.', 'MarkerSize', 5);
+                end
+            end
+            hold off;
+            set(gca, 'YDir', 'reverse');
+            xlim(psth_window_ms);
+            ylim([0 length(stimTimes)+1]);
+            ylabel('Trial Number');
+            title('Spike Raster (Response)');
+            grid on;
+            
+            % Subplot 2: Response vs Baselines comparison
+            ax2 = subplot(2,2,2); hold on;
+            baseline_time_ms = (base_metrics.time_vector_s - current_baseline_window_s(1)) * 1000;
+            for i = 1:num_baseline_psths
+                plot(baseline_time_ms, all_baseline_psth_smooth(i, :), ...
+                    'Color', [0.8 0.8 0.8], 'LineWidth', 0.5);
+            end
+            p1_diag = plot(resp_metrics.time_vector_s*1000, resp_metrics.psth_smooth, ...
+                'r-', 'LineWidth', 2);
+            p2_diag = plot(baseline_time_ms, mean_baseline_psth, 'k-', 'LineWidth', 2);
+            hold off;
+            title('Diagnostic: Response vs. Baselines');
+            ylabel('Firing Rate (spikes/s)');
+            xlabel('Time from stimulus (ms)');
+            legend([p1_diag, p2_diag], 'Response', 'Mean Baseline', 'Location', 'Best');
+            grid on;
+            
+            % Subplot 3: Smoothed response PSTH with metrics
+            ax3 = subplot(2,2,3); hold on;
+            edges_s = psth_window_s(1):psth_bin_width_s:psth_window_s(2);
+            bar(edges_s * 1000, response.psth_histogram, 1, ...
+                'FaceColor', 0.7*[1 1 1], 'EdgeColor', 0.8*[1 1 1], 'HandleVisibility', 'off');
+            plot(resp_metrics.time_vector_s * 1000, resp_metrics.psth_smooth, ...
+                'r-', 'LineWidth', 2, 'DisplayName', 'Smoothed PSTH');
+            plot(resp_metrics.peak_time_s*1000, resp_metrics.peak_firing_rate, ...
+                'bo', 'MarkerFaceColor', 'b', 'MarkerSize', 7, 'DisplayName', 'R_{max}');
+            text(resp_metrics.peak_time_s*1000, resp_metrics.peak_firing_rate, ...
+                sprintf(' R_{max}: %.1f Hz', resp_metrics.peak_firing_rate), ...
+                'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left', ...
+                'Color', 'k', 'FontWeight', 'bold');
+            
+            if ~isnan(halfRmax_time_s)
+                plot(halfRmax_time_s*1000, halfRmax_val, ...
+                    'go', 'MarkerFaceColor', 'g', 'MarkerSize', 7, 'DisplayName', 'Half R_{max}');
+                text(halfRmax_time_s*1000, halfRmax_val, ...
+                    sprintf(' Half R_{max} @ %.1f ms', halfRmax_time_s*1000), ...
+                    'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
+                    'Color', 'k', 'FontWeight', 'bold');
+            end
+            hold off;
+            ylabel('Firing Rate (spikes/s)');
+            xlabel('Time from stimulus (ms)');
+            title('Smoothed Response PSTH & Metrics');
+            legend('Location', 'northeast');
+            grid on;
+            
+            % Subplot 4: Adaptive kernel bandwidth
+            ax4 = subplot(2,2,4);
+            plot(resp_metrics.time_vector_s * 1000, resp_metrics.kernel_bandwidth_s * 1000, ...
+                'b-', 'LineWidth', 2);
+            ylabel('Bandwidth (ms)');
+            xlabel('Time from stimulus (ms)');
+            title('Adaptive Kernel Bandwidth (Response)');
+            grid on;
+            
+            linkaxes([ax1, ax2, ax3, ax4], 'x');
+            xlim(psth_window_ms);
+            
+            % Save plot
+            plot_filename = fullfile(patternFigFolder, sprintf('Analysis_Plot_Chan_%d.png', channel_id));
+            pipelineSaveFig(plot_filename, Params.figExt, Params.fullSVG, fig);
+            close(fig);
+            
+            % Store results for this channel
+            valid_channel_count = valid_channel_count + 1;
+            networkResponse(valid_channel_count).channel_id = channel_id;
+            networkResponse(valid_channel_count).file_index = channelIdx;
+            networkResponse(valid_channel_count).pattern_id = patternIdx;
+            networkResponse(valid_channel_count).auc_response = resp_metrics.auc;
+            networkResponse(valid_channel_count).auc_baseline_mean = mean_baseline_auc;
+            networkResponse(valid_channel_count).auc_corrected = auc_corrected;
+            networkResponse(valid_channel_count).peak_firing_rate_hz = resp_metrics.peak_firing_rate;
+            networkResponse(valid_channel_count).peak_time_ms = resp_metrics.peak_time_s * 1000;
+            networkResponse(valid_channel_count).halfRmax_time_ms = halfRmax_time_s * 1000;
+        end
+        
+        % Save networkResponse data for this pattern
+        if ~isempty(networkResponse)
+            timestamp = datestr(now, 'ddmmmyyyy_HHMMSS');
+            output_filename = fullfile(patternFigFolder, ...
+                sprintf('networkResponse_pattern_%d_%s.mat', patternIdx, timestamp));
+            save(output_filename, 'networkResponse');
+        end
+    end
 
 end
