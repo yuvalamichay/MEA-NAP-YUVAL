@@ -132,7 +132,7 @@ N = sum(y_hist*dt);
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 % Computing local MISEs and optimal bandwidths
-disp('computing local bandwidths...');
+%disp('computing local bandwidths...');
 
 %logexp = @(x) log(1+exp(x)); 
 %ilogexp = @(x) log(exp(x)-1);
@@ -170,7 +170,7 @@ end
 % Golden section search of the stiffness parameter of variable bandwidths.
 % Selecting a bandwidth w/W = g. 
 
-disp('adapting local bandwidths...');
+%disp('adapting local bandwidths...');
 
 % Initialization
 tol = 10^-5; 
@@ -215,7 +215,7 @@ while  ( abs(b-a) > tol*(abs(c1)+abs(c2)) ) && k < 30
     C(k) = f1;
     k = k + 1;
 end
-disp('optimization completed.');
+%disp('optimization completed.');
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
@@ -435,5 +435,6 @@ y(idx) = log(exp(x(idx))-1);
 
 idx = x>=1e2; 
 y(idx) = x(idx);
+
 
 
