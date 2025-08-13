@@ -354,7 +354,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     
     % PSTH Analysis Parameters
     psth_window_s = [0, 0.02];           % 20ms analysis window post-stimulus
-    psth_bin_width_s = Params.rasterBinWidth;  % Use MEA-NAP raster bin width
+    psth_bin_width_s = 0.001;            % 1ms bin width for PSTH
     num_baseline_psths = 100;            % Number of baseline PSTHs 
     baseline_duration_s = psth_window_s(2) - psth_window_s(1);  % Match analysis window duration
     artifact_window_ms = Params.stimRemoveSpikesWindow * 1000;  % Convert from seconds to ms
@@ -368,7 +368,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         end
         
         % Create pattern-specific output folder
-        patternFolderName = sprintf('Pattern_%d', patternIdx);
+        patternFolderName = sprintf('Individual_PSTH_and_Raster_Pattern_%d', patternIdx);
         patternFigFolder = fullfile(figFolder, patternFolderName);
         if ~exist(patternFigFolder, 'dir')
             mkdir(patternFigFolder);
@@ -552,7 +552,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             xlim(psth_window_ms);
             
             % Save plot
-            plot_filename = fullfile(patternFigFolder, sprintf('Analysis_Plot_Chan_%d.png', channel_id));
+            plot_filename = fullfile(patternFigFolder, sprintf('Individual_PSTH_and_Raster_channel_%d.png', channel_id));
             pipelineSaveFig(plot_filename, Params.figExt, Params.fullSVG, fig);
             close(fig);
             
