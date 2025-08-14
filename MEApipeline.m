@@ -587,7 +587,7 @@ if Params.startAnalysisStep < 3
             figFolder = fullfile(groupFolder, expData.Info.FN{1});
 
             spikeData = load(spikeDataFpath);
-            stimActivityAnalysis(spikeData, Params, expData.Info, ...
+            [networkResponse, figFolder] = stimActivityAnalysis(spikeData, Params, expData.Info, ...
                 figFolder, oneFigureHandle);
         end
     end

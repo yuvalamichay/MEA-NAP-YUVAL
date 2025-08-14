@@ -11,9 +11,18 @@ function csv_data = pipelineReadCSV(spreadsheet_filename, csvRange)
         opts.VariableTypes{1} = 'char';  % this should be the recoding file name
         opts.VariableTypes{2} = 'double';  % this should be the DIV
         opts.VariableTypes{3} = 'char'; % this should be Group 
-        if length(opts.VariableNames) > 3
-            opts.VariableTypes{4} = 'char'; % this should be Ground
-        end 
+        
+        varNames = opts.VariableNames;
+        groundColIdx = find(strcmpi(varNames, 'Ground'));
+        if ~isempty(groundColIdx)
+            opts.VariableTypes{groundColIdx} = 'char';
+        end
+
+        conditionColIdx = find(strcmpi(varNames, 'Condition'));
+        if ~isempty(conditionColIdx)
+            opts.VariableTypes{conditionColIdx} = 'char';
+        end
+
         opts.DataLines = csvRange; % read the data in the range [StartRow EndRow]
         % csv_data = readtable(spreadsheet_filename, 'Delimiter','comma');
         csv_data = readtable(spreadsheet_filename, opts);

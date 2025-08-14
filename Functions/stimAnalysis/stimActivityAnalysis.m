@@ -1,4 +1,4 @@
-function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandle)
+function [networkResponse, figFolder] = stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandle)
 % Performs analysis of spike data relative to stimulation times 
 % INPUT
 % -------
@@ -7,6 +7,13 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
 % Info : struct 
 % figFolder : path 
 % oneFigureHandle : matlab figure object
+%
+% OUTPUT
+% -------
+% networkResponse : struct
+%   contains the PSTH-derived metrics for each electrode
+% figFolder : path
+%   path to the figure folder
 
     
     %% Gather stimulation times
@@ -583,6 +590,13 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             output_filename = fullfile(patternFigFolder, ...
                 sprintf('networkResponse_pattern_%d_%s.mat', patternIdx, timestamp));
             save(output_filename, 'networkResponse');
+
+            % Add condition to networkResponse if available
+            if isfield(Info, 'Condition')
+                for i = 1:length(networkResponse)
+                    networkResponse(i).condition = Info.Condition;
+                end
+            end
         end
     end
 
