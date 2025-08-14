@@ -506,6 +506,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             xlim(psth_window_ms);
             ylim([0 length(stimTimes)+1]);
             ylabel('Trial Number');
+            xlabel('Time from stimulus (ms)');
             title('Spike Raster (Response)');
             grid on;
             
