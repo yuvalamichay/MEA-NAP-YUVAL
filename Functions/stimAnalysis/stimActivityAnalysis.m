@@ -373,6 +373,7 @@ function [networkResponse, figFolder] = stimActivityAnalysis(spikeData, Params, 
         artifact_window_ms = Params.stimRemoveSpikesWindow * 1000;
     end
     
+    all_patterns_network_response = []; % Initialize aggregate response collector
     % Loop through each stimulation pattern
     for patternIdx = 1:length(spikeData.stimPatterns)
         stimTimes = spikeData.stimPatterns{patternIdx};  % Get stim times for this pattern
@@ -603,7 +604,8 @@ function [networkResponse, figFolder] = stimActivityAnalysis(spikeData, Params, 
                     networkResponse(i).condition = Info.Condition;
                 end
             end
+            all_patterns_network_response = [all_patterns_network_response, networkResponse];
         end
     end
-
+    networkResponse = all_patterns_network_response;
 end
