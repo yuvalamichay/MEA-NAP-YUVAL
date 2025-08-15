@@ -488,18 +488,18 @@ function [networkResponse, figFolder] = stimActivityAnalysis(spikeData, Params, 
                 halfRmax_val = NaN;
             end
             
+            % Get channel ID (use electrode info if available, otherwise use index)
+            if isfield(spikeData, 'stimInfo') && channelIdx <= length(spikeData.stimInfo) && ...
+               isfield(spikeData.stimInfo{channelIdx}, 'channelName')
+                channel_id = spikeData.stimInfo{channelIdx}.channelName;
+            else
+                channel_id = channelIdx;  % Fallback to channel index
+            end
+
             % Generate PSTH plot for this channel, only for a random subset
             if ismember(channelIdx, channels_to_plot)
                 fig = figure('Position', [100 100 1200 900], 'Visible', 'off');
                 psth_window_ms = psth_window_s * 1000;
-                
-                % Get channel ID (use electrode info if available, otherwise use index)
-                if isfield(spikeData, 'stimInfo') && channelIdx <= length(spikeData.stimInfo) && ...
-                   isfield(spikeData.stimInfo{channelIdx}, 'channelName')
-                    channel_id = spikeData.stimInfo{channelIdx}.channelName;
-                else
-                    channel_id = channelIdx;  % Fallback to channel index
-                end
                 
                 sgtitle(sprintf('Pattern %d | Channel %d | Peak Rate: %.1f Hz | Corrected AUC: %.3f', ...
                     patternIdx, channel_id, resp_metrics.peak_firing_rate, auc_corrected), 'FontWeight', 'bold');
