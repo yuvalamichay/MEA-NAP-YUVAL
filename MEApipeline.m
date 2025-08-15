@@ -572,6 +572,7 @@ if Params.startAnalysisStep < 3
 
     % Stimulation neuronal activity analysis 
     if Params.stimulationMode == 1
+        allNetworkResponses = {}; % To store network responses from all files for final comparison
         for ExN = 1:length(ExpName)
             % spike data 
             spikeDataFname = strcat(char(ExpName(ExN)),'_spikes','.mat');
@@ -589,6 +590,7 @@ if Params.startAnalysisStep < 3
             spikeData = load(spikeDataFpath);
             [networkResponse, figFolder] = stimActivityAnalysis(spikeData, Params, expData.Info, ...
                 figFolder, oneFigureHandle);
+            allNetworkResponses{end+1} = networkResponse;
         end
     end
     
@@ -1239,6 +1241,12 @@ if any(strcmp(Params.optionalStepsToRun,'getDensityLandscape'))
     if ~isfolder(fig_folder)
         mkdir(fig_folder)
     end 
+    
+    % After the loop, generate the comparison plots if stim analysis was run
+    if Params.stimulationMode == 1 && ~isempty(allNetworkResponses)
+        disp('Generating PSTH comparison plots across all recordings...');
+        plotPSTHComparison(allNetworkResponses, figFolder);
+    end
     
     % loop through multiple DIVs
     for DIV = [14, 17, 21, 24, 28]
