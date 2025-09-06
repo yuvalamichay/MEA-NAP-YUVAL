@@ -372,6 +372,13 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     end
     
     if isempty(allBlankDurations)
+        % Debug: Show what fields are actually available
+        fprintf('DEBUG: stimInfo fields available in first channel:\n');
+        if ~isempty(spikeData.stimInfo)
+            disp(fieldnames(spikeData.stimInfo{1}));
+        else
+            fprintf('ERROR: stimInfo is empty\n');
+        end
         error('allBlankDurations is required but not found in stimInfo. Ensure detectStimTimesTemplate has been run.');
     end
     
