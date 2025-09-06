@@ -362,28 +362,21 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     postBlankIgnore = 0.5; % Hardcoded to 0.5 ms additional time after blank end
     
     % Get blank durations from any channel that has it (should be same across channels)
-    allBlankDurations = [];
+    blankDurations = [];
     for ch_idx = 1:length(spikeData.stimInfo)
-        if isfield(spikeData.stimInfo{ch_idx}, 'allBlankDurations') && ...
-           ~isempty(spikeData.stimInfo{ch_idx}.allBlankDurations)
-            allBlankDurations = spikeData.stimInfo{ch_idx}.allBlankDurations;
+        if isfield(spikeData.stimInfo{ch_idx}, 'blankDurations') && ...
+           ~isempty(spikeData.stimInfo{ch_idx}.blankDurations)
+            blankDurations = spikeData.stimInfo{ch_idx}.blankDurations;
             break;
         end
     end
     
-    if isempty(allBlankDurations)
-        % Debug: Show what fields are actually available
-        fprintf('DEBUG: stimInfo fields available in first channel:\n');
-        if ~isempty(spikeData.stimInfo)
-            disp(fieldnames(spikeData.stimInfo{1}));
-        else
-            fprintf('ERROR: stimInfo is empty\n');
-        end
-        error('allBlankDurations is required but not found in stimInfo. Ensure detectStimTimesTemplate has been run.');
+    if isempty(blankDurations)
+        error('blankDurations is required but not found in stimInfo. Ensure detectStimTimesTemplate has been run with longblank method.');
     end
     
     % Calculate artifact window as mode of blank durations plus postBlankIgnore
-    mode_blank_duration_ms = mode(allBlankDurations * 1000); % Convert to ms
+    mode_blank_duration_ms = mode(blankDurations * 1000); % Convert to ms
     artifact_window_end_ms = mode_blank_duration_ms + postBlankIgnore;
     artifact_window_ms = [0, artifact_window_end_ms]; % Window from stimTime to mode+postBlankIgnore
     
