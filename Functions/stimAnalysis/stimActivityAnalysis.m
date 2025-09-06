@@ -357,19 +357,37 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     psth_bin_width_s = 0.001;            % 1ms bin width for PSTH
     num_baseline_psths = 100;            % Number of baseline PSTHs 
     baseline_duration_s = psth_window_s(2) - psth_window_s(1);  % Match analysis window duration
-    % Convert stimRemoveSpikesWindow from seconds to ms and ensure it's an array
-    % OLD CODE: Use Params.stimRemoveSpikesWindow for artifact window
-    % if length(Params.stimRemoveSpikesWindow) == 1
-    %     % If single value, create window from 0 to that value (e.g., 0.002s -> [0, 2]ms)
-    %     artifact_window_ms = [0, Params.stimRemoveSpikesWindow * 1000];
-    % else
-    %     % If already an array, convert to ms
-    %     artifact_window_ms = Params.stimRemoveSpikesWindow * 1000;
-    % end
+    % NEW APPROACH: Calculate artifact window based on blank durations from detectStimTimesTemplate
+    % plus a hardcoded postBlankIgnore value
+    postBlankIgnore = 0.5; % Hardcoded to 0.5 ms additional time after blank end
     
-    % NEW CODE: Hardcode artifact window to 0.5 ms (changed behavior)
-    % This value will be added to allBlankEndsTemplate to determine spike removal end time
-    artifact_window_ms = 0.5; % Hardcoded to 0.5 ms instead of using Params.stimRemoveSpikesWindow
+    % Get blank durations from any channel that has it (should be same across channels)
+    allBlankDurations = [];
+    for ch_idx = 1:length(spikeData.stimInfo)
+        if isfield(spikeData.stimInfo{ch_idx}, 'allBlankDurations') && ...
+           ~isempty(spikeData.stimInfo{ch_idx}.allBlankDurations)
+            allBlankDurations = spikeData.stimInfo{ch_idx}.allBlankDurations;
+            break;
+        end
+    end
+    
+    if isempty(allBlankDurations)
+        % Fallback to original parameter-based approach if blank durations not available
+        warning('allBlankDurations not found in stimInfo. Falling back to Params.stimRemoveSpikesWindow');
+        if length(Params.stimRemoveSpikesWindow) == 1
+            artifact_window_ms = [0, Params.stimRemoveSpikesWindow * 1000];
+        else
+            artifact_window_ms = Params.stimRemoveSpikesWindow * 1000;
+        end
+    else
+        % Calculate artifact window as mode of blank durations plus postBlankIgnore
+        mode_blank_duration_ms = mode(allBlankDurations * 1000); % Convert to ms
+        artifact_window_end_ms = mode_blank_duration_ms + postBlankIgnore;
+        artifact_window_ms = [0, artifact_window_end_ms]; % Window from stimTime to mode+postBlankIgnore
+        
+        fprintf('Using blank duration-based artifact window: [0, %.2f] ms (mode duration: %.2f ms + %.2f ms post-blank ignore)\n', ...
+                artifact_window_end_ms, mode_blank_duration_ms, postBlankIgnore);
+    end
     
     % Loop through each stimulation pattern
     for patternIdx = 1:length(spikeData.stimPatterns)
@@ -414,49 +432,12 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             end
             
             % Remove spikes within artifact window for each stimulus
-            % OLD CODE: Remove spikes using fixed artifact window around stimTime
-            % spikeTimes_cleaned_s = all_spike_times_s;
-            % for stimIdx = 1:length(stimTimes)
-            %     stimTime = stimTimes(stimIdx);
-            %     spikeTimes_cleaned_s = spikeTimes_cleaned_s(...
-            %         spikeTimes_cleaned_s < (stimTime + artifact_window_ms(1)/1000) | ...
-            %         spikeTimes_cleaned_s >= (stimTime + artifact_window_ms(2)/1000));
-            % end
-            
-            % NEW CODE: Remove spikes from stimTime to allBlankEndsTemplate + artifact_window_ms
-            % This changes the removal window to be based on blank end times from detectStimTimesTemplate
             spikeTimes_cleaned_s = all_spike_times_s;
-            
-            % Get allBlankEndsTemplate from any channel that has it (should be same across channels)
-            allBlankEndsTemplate = [];
-            for ch_idx = 1:length(spikeData.stimInfo)
-                if isfield(spikeData.stimInfo{ch_idx}, 'allBlankEndsTemplate') && ...
-                   ~isempty(spikeData.stimInfo{ch_idx}.allBlankEndsTemplate)
-                    allBlankEndsTemplate = spikeData.stimInfo{ch_idx}.allBlankEndsTemplate;
-                    break;
-                end
-            end
-            
-            if isempty(allBlankEndsTemplate)
-                error('allBlankEndsTemplate is required but not found in stimInfo. Ensure detectStimTimesTemplate has been run.');
-            end
-            
-            % For each stimTime, find next allBlankEndsTemplate and remove spikes accordingly
             for stimIdx = 1:length(stimTimes)
                 stimTime = stimTimes(stimIdx);
-                
-                % Find the next allBlankEndsTemplate that occurs after stimTime
-                next_blank_end_idx = find(allBlankEndsTemplate > stimTime, 1, 'first');
-                
-                if ~isempty(next_blank_end_idx)
-                    next_blank_end = allBlankEndsTemplate(next_blank_end_idx);
-                    % Remove spikes from stimTime to next_blank_end + artifact_window_ms
-                    spike_removal_end = next_blank_end + artifact_window_ms/1000; % Convert ms to seconds
-                    
-                    spikeTimes_cleaned_s = spikeTimes_cleaned_s(...
-                        spikeTimes_cleaned_s < stimTime | ...
-                        spikeTimes_cleaned_s >= spike_removal_end);
-                end
+                spikeTimes_cleaned_s = spikeTimes_cleaned_s(...
+                    spikeTimes_cleaned_s < (stimTime + artifact_window_ms(1)/1000) | ...
+                    spikeTimes_cleaned_s >= (stimTime + artifact_window_ms(2)/1000));
             end
             spikeTimes_cleaned_s = sort(spikeTimes_cleaned_s(:));
             
@@ -479,48 +460,15 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 current_baseline_window_s = [start_s, end_s];
                 
                 % Apply artifact blanking to baseline window
-                % OLD CODE: Apply fixed artifact window to baseline
-                % spikeTimes_cleaned_baseline_s = spikeTimes_cleaned_s;
-                % blank_start_offset_s = start_s + artifact_window_ms(1)/1000;
-                % blank_end_offset_s = start_s + artifact_window_ms(2)/1000;
-                % 
-                % for stimIdx = 1:length(stimTimes)
-                %     stimTime = stimTimes(stimIdx);
-                %     spikeTimes_cleaned_baseline_s = spikeTimes_cleaned_baseline_s(...
-                %         spikeTimes_cleaned_baseline_s < (stimTime + blank_start_offset_s) | ...
-                %         spikeTimes_cleaned_baseline_s >= (stimTime + blank_end_offset_s));
-                % end
-                
-                % NEW CODE: Apply same artifact removal logic for baseline windows
-                % Use the same allBlankEndsTemplate-based removal for consistency
-                % IMPORTANT: Shift allBlankEndsTemplate backwards by baseline window offset to maintain
-                % the correct temporal relationship between stimTime and its corresponding blank end
                 spikeTimes_cleaned_baseline_s = spikeTimes_cleaned_s;
+                blank_start_offset_s = start_s + artifact_window_ms(1)/1000;
+                blank_end_offset_s = start_s + artifact_window_ms(2)/1000;
                 
-                if isempty(allBlankEndsTemplate)
-                    error('allBlankEndsTemplate is required but not found in stimInfo. Ensure detectStimTimesTemplate has been run.');
-                end
-                
-                % Shift allBlankEndsTemplate backwards by the baseline window offset
-                % This maintains the same temporal relationship between stimTime and blank end
-                baseline_allBlankEndsTemplate = allBlankEndsTemplate + start_s;
-                
-                % Apply same artifact removal logic as main analysis for consistency
                 for stimIdx = 1:length(stimTimes)
                     stimTime = stimTimes(stimIdx);
-                    baseline_stimTime = stimTime + start_s; % Adjust stimTime for baseline window
-                    
-                    % Find the next baseline_allBlankEndsTemplate that occurs after baseline_stimTime
-                    next_blank_end_idx = find(baseline_allBlankEndsTemplate > baseline_stimTime, 1, 'first');
-                    
-                    if ~isempty(next_blank_end_idx)
-                        next_blank_end = baseline_allBlankEndsTemplate(next_blank_end_idx);
-                        spike_removal_end = next_blank_end + artifact_window_ms/1000; % Convert ms to seconds
-                        
-                        spikeTimes_cleaned_baseline_s = spikeTimes_cleaned_baseline_s(...
-                            spikeTimes_cleaned_baseline_s < baseline_stimTime | ...
-                            spikeTimes_cleaned_baseline_s >= spike_removal_end);
-                    end
+                    spikeTimes_cleaned_baseline_s = spikeTimes_cleaned_baseline_s(...
+                        spikeTimes_cleaned_baseline_s < (stimTime + blank_start_offset_s) | ...
+                        spikeTimes_cleaned_baseline_s >= (stimTime + blank_end_offset_s));
                 end
                 
                 [~, base_metrics] = calculate_psth_metrics(...
@@ -533,8 +481,6 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 all_baseline_psth_smooth(i, :) = base_metrics.psth_smooth;
             end
             
-            % NOTE: All subsequent computations (baseline-corrected metrics, decay analysis, 
-            % PSTH plotting, etc.) remain unchanged from original implementation
             % Calculate baseline-corrected metrics
             mean_baseline_auc = mean(baseline_aucs);
             auc_corrected = resp_metrics.auc - mean_baseline_auc;
