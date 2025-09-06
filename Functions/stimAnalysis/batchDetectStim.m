@@ -45,7 +45,7 @@ for expIdx = 1:length(ExpName)
     end
     %}
 
-    stimInfo = detectStimTimes(rawData, Params, stimRawData.channels, Params.coords{expIdx});
+    stimInfo = detectStimTimesTemplate(rawData, Params, stimRawData.channels, Params.coords{expIdx});
     [stimInfo, stimPatterns] = getStimPatterns(stimInfo, Params);
 
     % save stimInfo to spike data

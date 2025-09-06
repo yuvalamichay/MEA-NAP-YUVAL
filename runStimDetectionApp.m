@@ -129,7 +129,7 @@ while isvalid(stimDetectionAppObj)
             [MEANAPapp.MEANAPStatusTextArea.Value; ...
             'Running stim detection...'];
         drawnow
-        stimInfo = detectStimTimes(rawData.dat, Params, rawData.channels, Params.coords);
+        stimInfo = detectStimTimesTemplate(rawData.dat, Params, rawData.channels, Params.coords);
         [stimInfo, stimPatterns] = getStimPatterns(stimInfo, Params);
         numStimPatterns = length(stimPatterns);
         
