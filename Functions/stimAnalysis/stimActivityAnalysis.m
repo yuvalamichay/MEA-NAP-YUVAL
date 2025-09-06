@@ -372,22 +372,16 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     end
     
     if isempty(allBlankDurations)
-        % Fallback to original parameter-based approach if blank durations not available
-        warning('allBlankDurations not found in stimInfo. Falling back to Params.stimRemoveSpikesWindow');
-        if length(Params.stimRemoveSpikesWindow) == 1
-            artifact_window_ms = [0, Params.stimRemoveSpikesWindow * 1000];
-        else
-            artifact_window_ms = Params.stimRemoveSpikesWindow * 1000;
-        end
-    else
-        % Calculate artifact window as mode of blank durations plus postBlankIgnore
-        mode_blank_duration_ms = mode(allBlankDurations * 1000); % Convert to ms
-        artifact_window_end_ms = mode_blank_duration_ms + postBlankIgnore;
-        artifact_window_ms = [0, artifact_window_end_ms]; % Window from stimTime to mode+postBlankIgnore
-        
-        fprintf('Using blank duration-based artifact window: [0, %.2f] ms (mode duration: %.2f ms + %.2f ms post-blank ignore)\n', ...
-                artifact_window_end_ms, mode_blank_duration_ms, postBlankIgnore);
+        error('allBlankDurations is required but not found in stimInfo. Ensure detectStimTimesTemplate has been run.');
     end
+    
+    % Calculate artifact window as mode of blank durations plus postBlankIgnore
+    mode_blank_duration_ms = mode(allBlankDurations * 1000); % Convert to ms
+    artifact_window_end_ms = mode_blank_duration_ms + postBlankIgnore;
+    artifact_window_ms = [0, artifact_window_end_ms]; % Window from stimTime to mode+postBlankIgnore
+    
+    fprintf('Using blank duration-based artifact window: [0, %.2f] ms (mode duration: %.2f ms + %.2f ms post-blank ignore)\n', ...
+            artifact_window_end_ms, mode_blank_duration_ms, postBlankIgnore);
     
     % Loop through each stimulation pattern
     for patternIdx = 1:length(spikeData.stimPatterns)
