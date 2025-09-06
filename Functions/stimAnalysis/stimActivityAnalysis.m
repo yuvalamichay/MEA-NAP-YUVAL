@@ -182,10 +182,10 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         for window_idx = 1:numDecodingTimeBins
             subsetTimeIdx = find((rasterBins >= Params.stimDecodingTimeWindows(window_idx)) & ...
             (rasterBins <= Params.stimDecodingTimeWindows(window_idx+1))) - 1;
-            patternSpikeMatrixAtWindow = mean(frAlignedToStim(:, :, subsetTimeIdx), 3); % mean across time
+            patternSpikeMatrixAtWindow = mean(frAlignedToStim(:, :, subsetTimeIdx), 3); % mean across time [numChannels, numTrials]
             start_idx = 1 + (window_idx - 1) * numChannels; 
             end_idx = start_idx + numChannels - 1;
-            patternSpikeMatrix(:, start_idx:end_idx) = patternSpikeMatrixAtWindow;
+            patternSpikeMatrix(:, start_idx:end_idx) = patternSpikeMatrixAtWindow'; % Transpose to match [numTrials, numChannels]
         end
 
         % subsetTimeIdx = find((rasterBins >= Params.postStimWindow(1)) & ...
