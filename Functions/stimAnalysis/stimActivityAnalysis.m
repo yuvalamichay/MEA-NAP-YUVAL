@@ -383,6 +383,20 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     fprintf('Using blank duration-based artifact window: [0, %.2f] ms (mode duration: %.2f ms + %.2f ms post-blank ignore)\n', ...
             artifact_window_end_ms, mode_blank_duration_ms, postBlankIgnore);
     
+    % Create global list of stimulated channels to exclude from ALL pattern analyses
+    stimulatedChannels = [];
+    if isfield(spikeData, 'stimInfo')
+        for channelIdx = 1:length(spikeData.stimInfo)
+            if isfield(spikeData.stimInfo{channelIdx}, 'pattern') && ...
+               ~isempty(spikeData.stimInfo{channelIdx}.pattern)
+                stimulatedChannels = [stimulatedChannels, channelIdx];
+            end
+        end
+    end
+    stimulatedChannels = unique(stimulatedChannels);  % Remove duplicates
+    fprintf('Excluding %d stimulated channels from analysis across all patterns: [%s]\n', ...
+            length(stimulatedChannels), num2str(stimulatedChannels));
+    
     % Loop through each stimulation pattern
     for patternIdx = 1:length(spikeData.stimPatterns)
         stimTimes = spikeData.stimPatterns{patternIdx};  % Get stim times for this pattern
@@ -404,13 +418,9 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         
         % Loop through each channel
         for channelIdx = 1:numChannels
-            % Exclude stimulated channels for the current pattern
-            if isfield(spikeData, 'stimInfo') && ...
-               channelIdx <= length(spikeData.stimInfo) && ...
-               isfield(spikeData.stimInfo{channelIdx}, 'pattern') && ...
-               ~isempty(spikeData.stimInfo{channelIdx}.pattern) && ...
-               spikeData.stimInfo{channelIdx}.pattern == patternIdx
-                continue; % Skip analysis for stimulated channels
+            % Exclude any channels that are stimulated in ANY pattern
+            if ismember(channelIdx, stimulatedChannels)
+                continue; % Skip analysis for all stimulated channels
             end
 
             % Extract spike times for current channel
