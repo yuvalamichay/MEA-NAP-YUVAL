@@ -384,11 +384,13 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             artifact_window_end_ms, mode_blank_duration_ms, postBlankIgnore);
     
     % Create global list of stimulated channels to exclude from ALL pattern analyses
+    % Only exclude channels with pattern > 0 (pattern 0 = no stimulation)
     stimulatedChannels = [];
     if isfield(spikeData, 'stimInfo')
         for channelIdx = 1:length(spikeData.stimInfo)
             if isfield(spikeData.stimInfo{channelIdx}, 'pattern') && ...
-               ~isempty(spikeData.stimInfo{channelIdx}.pattern)
+               ~isempty(spikeData.stimInfo{channelIdx}.pattern) && ...
+               spikeData.stimInfo{channelIdx}.pattern > 0
                 stimulatedChannels = [stimulatedChannels, channelIdx];
             end
         end
