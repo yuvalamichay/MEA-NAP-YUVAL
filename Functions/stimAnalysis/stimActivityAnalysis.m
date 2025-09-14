@@ -645,12 +645,10 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 plot_filename_base = fullfile(patternFigFolder, sprintf('Individual_PSTH_and_Raster_channel_%d', data.channel_id));
                 
                 % Save as PNG
-                plot_filename_png = [plot_filename_base '.png'];
-                pipelineSaveFig(plot_filename_png, '.png', false, fig);
+                pipelineSaveFig(plot_filename_base, {'.png'}, false, fig);
                 
                 % Save as SVG
-                plot_filename_svg = [plot_filename_base '.svg'];
-                pipelineSaveFig(plot_filename_svg, '.svg', true, fig);
+                pipelineSaveFig(plot_filename_base, {'.svg'}, true, fig);
                 
                 close(fig);
             end
