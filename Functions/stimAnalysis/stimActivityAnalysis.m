@@ -418,6 +418,10 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         networkResponse = [];
         valid_channel_count = 0;
         
+        % First pass: collect all channel metrics to identify top channels for plotting
+        channel_metrics = [];
+        temp_data = {};
+        
         % Loop through each channel
         for channelIdx = 1:numChannels
             % Exclude any channels that are stimulated in ANY pattern
@@ -506,9 +510,8 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 halfRmax_val = NaN;
             end
             
-            % Generate PSTH plot for this channel
-            fig = figure('Position', [100 100 1200 900], 'Visible', 'off');
-            psth_window_ms = psth_window_s * 1000;
+            % Store channel data for later processing
+            valid_channel_count = valid_channel_count + 1;
             
             % Get channel ID (use electrode info if available, otherwise use index)
             if isfield(spikeData, 'stimInfo') && channelIdx <= length(spikeData.stimInfo) && ...
@@ -518,83 +521,21 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 channel_id = channelIdx;  % Fallback to channel index
             end
             
-            sgtitle(sprintf('Pattern %d | Channel %d | Peak Rate: %.1f Hz | Corrected AUC: %.3f', ...
-                patternIdx, channel_id, resp_metrics.peak_firing_rate, auc_corrected), 'FontWeight', 'bold');
+            % Store all necessary data for this channel
+            temp_data{valid_channel_count}.channelIdx = channelIdx;
+            temp_data{valid_channel_count}.channel_id = channel_id;
+            temp_data{valid_channel_count}.auc_corrected = auc_corrected;
+            temp_data{valid_channel_count}.response = response;
+            temp_data{valid_channel_count}.resp_metrics = resp_metrics;
+            temp_data{valid_channel_count}.base_metrics = base_metrics;
+            temp_data{valid_channel_count}.all_baseline_psth_smooth = all_baseline_psth_smooth;
+            temp_data{valid_channel_count}.mean_baseline_auc = mean_baseline_auc;
+            temp_data{valid_channel_count}.mean_baseline_psth = mean_baseline_psth;
+            temp_data{valid_channel_count}.halfRmax_time_s = halfRmax_time_s;
+            temp_data{valid_channel_count}.halfRmax_val = halfRmax_val;
+            temp_data{valid_channel_count}.current_baseline_window_s = current_baseline_window_s;
             
-            % Subplot 1 (top right): Spike Raster Plot
-            ax1 = subplot(2, 2, 2); hold on;
-            for trial_idx = 1:length(response.spikeTimes_byEvent)
-                trial_spikes_s = response.spikeTimes_byEvent{trial_idx};
-                if ~isempty(trial_spikes_s)
-                    plot(trial_spikes_s * 1000, trial_idx * ones(size(trial_spikes_s)), ...
-                        'r.', 'MarkerSize', 5);
-                end
-            end
-            hold off;
-            set(gca, 'YDir', 'reverse');
-            xlim(psth_window_ms);
-            ylim([0 length(stimTimes)+1]);
-            ylabel('Trial Number');
-            xlabel('Time from stimulus (ms)');
-            title('Spike Raster (Response)');
-            grid on;
-            
-            % Subplot 2 (bottom right): Response vs Baselines comparison
-            ax2 = subplot(2, 2, 4); hold on;
-            baseline_time_ms = (base_metrics.time_vector_s - current_baseline_window_s(1)) * 1000;
-            for i = 1:num_baseline_psths
-                plot(baseline_time_ms, all_baseline_psth_smooth(i, :), ...
-                    'Color', [0.8 0.8 0.8], 'LineWidth', 0.5);
-            end
-            p1_diag = plot(resp_metrics.time_vector_s*1000, resp_metrics.psth_smooth, ...
-                'r-', 'LineWidth', 2);
-            p2_diag = plot(baseline_time_ms, mean_baseline_psth, 'k-', 'LineWidth', 2);
-            hold off;
-            title('Diagnostic: Response vs. Baselines');
-            ylabel('Firing Rate (spikes/s)');
-            xlabel('Time from stimulus (ms)');
-            legend([p1_diag, p2_diag], 'Response', 'Mean Baseline', 'Location', 'Best');
-            grid on;
-            
-            % Subplot 3 (left): Smoothed response PSTH with metrics
-            ax3 = subplot(2, 2, [1, 3]); hold on;
-            edges_s = psth_window_s(1):psth_bin_width_s:psth_window_s(2);
-            bar(edges_s * 1000, response.psth_histogram, 1, ...
-                'FaceColor', 0.7*[1 1 1], 'EdgeColor', 0.8*[1 1 1], 'HandleVisibility', 'off');
-            plot(resp_metrics.time_vector_s * 1000, resp_metrics.psth_smooth, ...
-                'r-', 'LineWidth', 2, 'DisplayName', 'Smoothed PSTH');
-            plot(resp_metrics.peak_time_s*1000, resp_metrics.peak_firing_rate, ...
-                'bo', 'MarkerFaceColor', 'b', 'MarkerSize', 7, 'DisplayName', 'R_{max}');
-            text(resp_metrics.peak_time_s*1000, resp_metrics.peak_firing_rate, ...
-                sprintf(' R_{max}: %.1f Hz', resp_metrics.peak_firing_rate), ...
-                'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left', ...
-                'Color', 'k', 'FontWeight', 'bold');
-            
-            if ~isnan(halfRmax_time_s)
-                plot(halfRmax_time_s*1000, halfRmax_val, ...
-                    'go', 'MarkerFaceColor', 'g', 'MarkerSize', 7, 'DisplayName', 'Half R_{max}');
-                text(halfRmax_time_s*1000, halfRmax_val, ...
-                    sprintf(' Half R_{max} @ %.1f ms', halfRmax_time_s*1000), ...
-                    'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
-                    'Color', 'k', 'FontWeight', 'bold');
-            end
-            hold off;
-            ylabel('Firing Rate (spikes/s)');
-            xlabel('Time from stimulus (ms)');
-            title('Smoothed Response PSTH & Metrics');
-            legend('Location', 'northeast');
-            grid on;
-            
-            linkaxes([ax1, ax2, ax3], 'x');
-            xlim(psth_window_ms);
-            
-            % Save plot
-            plot_filename = fullfile(patternFigFolder, sprintf('Individual_PSTH_and_Raster_channel_%d.png', channel_id));
-            pipelineSaveFig(plot_filename, Params.figExt, Params.fullSVG, fig);
-            close(fig);
-            
-            % Store results for this channel
-            valid_channel_count = valid_channel_count + 1;
+            % Store results for networkResponse
             networkResponse(valid_channel_count).channel_id = channel_id;
             networkResponse(valid_channel_count).file_index = channelIdx;
             networkResponse(valid_channel_count).pattern_id = patternIdx;
@@ -604,6 +545,115 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             networkResponse(valid_channel_count).peak_firing_rate_hz = resp_metrics.peak_firing_rate;
             networkResponse(valid_channel_count).peak_time_ms = resp_metrics.peak_time_s * 1000;
             networkResponse(valid_channel_count).halfRmax_time_ms = halfRmax_time_s * 1000;
+        end
+        
+        % Second pass: identify top 5 channels with corrected AUC > 0.5 for plotting
+        if ~isempty(temp_data)
+            % Extract corrected AUC values
+            auc_values = [networkResponse.auc_corrected];
+            
+            % Find channels with corrected AUC > 0.5
+            high_auc_indices = find(auc_values > 0.5);
+            
+            % Sort by corrected AUC (descending) and take top 5
+            [~, sort_indices] = sort(auc_values(high_auc_indices), 'descend');
+            top_channels_for_plotting = high_auc_indices(sort_indices(1:min(5, length(sort_indices))));
+            
+            fprintf('Pattern %d: Found %d channels with corrected AUC > 0.5. Plotting top %d channels.\n', ...
+                patternIdx, length(high_auc_indices), length(top_channels_for_plotting));
+            
+            % Generate plots only for selected channels
+            for plot_idx = 1:length(top_channels_for_plotting)
+                channel_data_idx = top_channels_for_plotting(plot_idx);
+                data = temp_data{channel_data_idx};
+                
+                % Generate PSTH plot for this channel
+                fig = figure('Position', [100 100 1200 900], 'Visible', 'off');
+                psth_window_ms = psth_window_s * 1000;
+                
+                sgtitle(sprintf('Pattern %d | Channel %d | Peak Rate: %.1f Hz | Corrected AUC: %.3f', ...
+                    patternIdx, data.channel_id, data.resp_metrics.peak_firing_rate, data.auc_corrected), 'FontWeight', 'bold');
+                
+                % Subplot 1 (top right): Spike Raster Plot
+                ax1 = subplot(2, 2, 2); hold on;
+                for trial_idx = 1:length(data.response.spikeTimes_byEvent)
+                    trial_spikes_s = data.response.spikeTimes_byEvent{trial_idx};
+                    if ~isempty(trial_spikes_s)
+                        plot(trial_spikes_s * 1000, trial_idx * ones(size(trial_spikes_s)), ...
+                            'r.', 'MarkerSize', 5);
+                    end
+                end
+                hold off;
+                set(gca, 'YDir', 'reverse');
+                xlim(psth_window_ms);
+                ylim([0 length(stimTimes)+1]);
+                ylabel('Trial Number');
+                xlabel('Time from stimulus (ms)');
+                title('Spike Raster (Response)');
+                grid on;
+                
+                % Subplot 2 (bottom right): Response vs Baselines comparison
+                ax2 = subplot(2, 2, 4); hold on;
+                baseline_time_ms = (data.base_metrics.time_vector_s - data.current_baseline_window_s(1)) * 1000;
+                for i = 1:num_baseline_psths
+                    plot(baseline_time_ms, data.all_baseline_psth_smooth(i, :), ...
+                        'Color', [0.8 0.8 0.8], 'LineWidth', 0.5);
+                end
+                p1_diag = plot(data.resp_metrics.time_vector_s*1000, data.resp_metrics.psth_smooth, ...
+                    'r-', 'LineWidth', 2);
+                p2_diag = plot(baseline_time_ms, data.mean_baseline_psth, 'k-', 'LineWidth', 2);
+                hold off;
+                title('Diagnostic: Response vs. Baselines');
+                ylabel('Firing Rate (spikes/s)');
+                xlabel('Time from stimulus (ms)');
+                legend([p1_diag, p2_diag], 'Response', 'Mean Baseline', 'Location', 'Best');
+                grid on;
+                
+                % Subplot 3 (left): Smoothed response PSTH with metrics
+                ax3 = subplot(2, 2, [1, 3]); hold on;
+                edges_s = psth_window_s(1):psth_bin_width_s:psth_window_s(2);
+                bar(edges_s * 1000, data.response.psth_histogram, 1, ...
+                    'FaceColor', 0.7*[1 1 1], 'EdgeColor', 0.8*[1 1 1], 'HandleVisibility', 'off');
+                plot(data.resp_metrics.time_vector_s * 1000, data.resp_metrics.psth_smooth, ...
+                    'r-', 'LineWidth', 2, 'DisplayName', 'Smoothed PSTH');
+                plot(data.resp_metrics.peak_time_s*1000, data.resp_metrics.peak_firing_rate, ...
+                    'bo', 'MarkerFaceColor', 'b', 'MarkerSize', 7, 'DisplayName', 'R_{max}');
+                text(data.resp_metrics.peak_time_s*1000, data.resp_metrics.peak_firing_rate, ...
+                    sprintf(' R_{max}: %.1f Hz', data.resp_metrics.peak_firing_rate), ...
+                    'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left', ...
+                    'Color', 'k', 'FontWeight', 'bold');
+                
+                if ~isnan(data.halfRmax_time_s)
+                    plot(data.halfRmax_time_s*1000, data.halfRmax_val, ...
+                        'go', 'MarkerFaceColor', 'g', 'MarkerSize', 7, 'DisplayName', 'Half R_{max}');
+                    text(data.halfRmax_time_s*1000, data.halfRmax_val, ...
+                        sprintf(' Half R_{max} @ %.1f ms', data.halfRmax_time_s*1000), ...
+                        'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
+                        'Color', 'k', 'FontWeight', 'bold');
+                end
+                hold off;
+                ylabel('Firing Rate (spikes/s)');
+                xlabel('Time from stimulus (ms)');
+                title('Smoothed Response PSTH & Metrics');
+                legend('Location', 'northeast');
+                grid on;
+                
+                linkaxes([ax1, ax2, ax3], 'x');
+                xlim(psth_window_ms);
+                
+                % Save plot in both PNG and SVG formats
+                plot_filename_base = fullfile(patternFigFolder, sprintf('Individual_PSTH_and_Raster_channel_%d', data.channel_id));
+                
+                % Save as PNG
+                plot_filename_png = [plot_filename_base '.png'];
+                pipelineSaveFig(plot_filename_png, '.png', false, fig);
+                
+                % Save as SVG
+                plot_filename_svg = [plot_filename_base '.svg'];
+                pipelineSaveFig(plot_filename_svg, '.svg', true, fig);
+                
+                close(fig);
+            end
         end
         
         % Save networkResponse data for this pattern
