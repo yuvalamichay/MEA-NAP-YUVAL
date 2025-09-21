@@ -399,7 +399,30 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     fprintf('Excluding %d stimulated channels from analysis across all patterns: [%s]\n', ...
             length(stimulatedChannels), num2str(stimulatedChannels));
     
-    % Loop through each stimulation pattern
+    % Create consolidated stimulation times and pattern labels for all patterns
+    allStimTimesConsolidated = [];
+    stimPatternLabels = [];
+    
+    for patternIdx = 1:length(spikeData.stimPatterns)
+        stimTimes = spikeData.stimPatterns{patternIdx};
+        if ~isempty(stimTimes)
+            allStimTimesConsolidated = [allStimTimesConsolidated, stimTimes];
+            stimPatternLabels = [stimPatternLabels, repmat(patternIdx, 1, length(stimTimes))];
+        end
+    end
+    
+    % Sort stimulation times chronologically and keep track of pattern labels
+    [allStimTimesConsolidated, sortIdx] = sort(allStimTimesConsolidated);
+    stimPatternLabels = stimPatternLabels(sortIdx);
+    
+    % Initialize matrix for average firing rates in post-stim window
+    % Dimensions: [numTrialsTotal x numChannels] where numTrialsTotal = all stim times across patterns
+    numTrialsTotal = length(allStimTimesConsolidated);
+    avgFiringRateMatrix = NaN(numTrialsTotal, numChannels);
+    
+    fprintf('Creating consolidated firing rate matrix: %d trials x %d channels\n', numTrialsTotal, numChannels);
+    
+    % Loop through each stimulation pattern for individual PSTH analysis
     for patternIdx = 1:length(spikeData.stimPatterns)
         stimTimes = spikeData.stimPatterns{patternIdx};  % Get stim times for this pattern
         
@@ -457,6 +480,37 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             
             if isempty(response.psth_samples)
                 continue;  % Skip if no spikes in response window
+            end
+            
+            % Calculate firing rates for each trial in post-stim window (for consolidated matrix)
+            % Only calculate once per channel across all trials
+            if patternIdx == 1  % Calculate consolidated matrix only once per channel
+                % Duration of analysis window in seconds
+                analysis_window_duration_s = psth_window_s(2) - psth_window_s(1);
+                
+                for trialIdx = 1:numTrialsTotal
+                    stimTime = allStimTimesConsolidated(trialIdx);
+                    
+                    % Count spikes in post-stim window for this trial (excluding artifact window)
+                    trial_window_start = stimTime + psth_window_s(1);
+                    trial_window_end = stimTime + psth_window_s(2);
+                    
+                    % Remove artifact window from spike counting
+                    artifact_start = stimTime + artifact_window_ms(1)/1000;
+                    artifact_end = stimTime + artifact_window_ms(2)/1000;
+                    
+                    % Find spikes in analysis window but outside artifact window
+                    spikes_in_window = all_spike_times_s(...
+                        (all_spike_times_s >= trial_window_start & all_spike_times_s <= trial_window_end) & ...
+                        ~(all_spike_times_s >= artifact_start & all_spike_times_s < artifact_end));
+                    
+                    % Calculate firing rate for this trial and electrode
+                    num_spikes = length(spikes_in_window);
+                    effective_window_duration = analysis_window_duration_s - (artifact_window_ms(2) - artifact_window_ms(1))/1000;
+                    firing_rate_hz = num_spikes / effective_window_duration;
+                    
+                    avgFiringRateMatrix(trialIdx, channelIdx) = firing_rate_hz;
+                end
             end
             
             % Calculate multiple baseline PSTHs
@@ -662,5 +716,30 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             save(output_filename, 'networkResponse');
         end
     end
+    
+    % Save consolidated average firing rate matrix (outside the pattern loop)
+    % Matrix dimensions: [numTrialsTotal x numChannels] 
+    % Values: Average firing rate (Hz) in post-stim window with artifact exclusion
+    % NaN values indicate stimulated channels (excluded from analysis)
+    avgFiringRateMatrix_info = struct();
+    avgFiringRateMatrix_info.description = 'Consolidated average firing rates (Hz) in post-stimulus window across all patterns';
+    avgFiringRateMatrix_info.dimensions = '[numTrialsTotal x numChannels]';
+    avgFiringRateMatrix_info.analysis_window_s = psth_window_s;
+    avgFiringRateMatrix_info.artifact_window_ms = artifact_window_ms;
+    avgFiringRateMatrix_info.stimulated_channels_excluded = stimulatedChannels;
+    avgFiringRateMatrix_info.allStimTimesConsolidated = allStimTimesConsolidated;
+    avgFiringRateMatrix_info.stimPatternLabels = stimPatternLabels;
+    avgFiringRateMatrix_info.numTrialsTotal = numTrialsTotal;
+    
+    % Create main output folder for consolidated data
+    consolidatedFolder = fullfile(figFolder, 'Reservoir Computing Metrics');
+    if ~exist(consolidatedFolder, 'dir')
+        mkdir(consolidatedFolder);
+    end
+    
+    matrix_filename = fullfile(consolidatedFolder, 'avgFiringRateMatrix_consolidated.mat');
+    save(matrix_filename, 'avgFiringRateMatrix', 'avgFiringRateMatrix_info');
+    
+    fprintf('Saved consolidated firing rate matrix to: %s\n', matrix_filename);
 
 end
