@@ -318,7 +318,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 featureIndices = [featureIndices; startIdx + nodeToUse];
             end
 
-            % trialIdxShuffled = trialIdx(randperm(length(trialIdx));
+            % trialIdxShuffled = trialIdx(randperm(length(trialIdx)));
             % train_idx = trialIdx(1:numTrainTrials);
             %test_idx = trialIdx((numTrainTrials+1):end);
             X_subset = X(:, featureIndices);
@@ -355,8 +355,18 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % PSTH Analysis Parameters
     psth_window_s = [0, 0.02];           % 20ms analysis window post-stimulus
     psth_bin_width_s = 0.001;            % 1ms bin width for PSTH
-    num_baseline_psths = 100;            % Number of baseline PSTHs 
+    num_baseline_psths = 50;            % Number of baseline PSTHs 
     baseline_duration_s = psth_window_s(2) - psth_window_s(1);  % Match analysis window duration
+    
+    % PSTH Smoothing Parameters - MANUALLY SPECIFY HERE
+    psth_smoothing_method = 'gaussian';  % Options: 'ssvkernel' or 'gaussian'
+    psth_gaussian_width_ms = 1;          % Gaussian kernel width in ms (only used if method is 'gaussian')
+    
+    fprintf('PSTH Smoothing: %s', psth_smoothing_method);
+    if ~strcmp(psth_smoothing_method, 'ssvkernel')
+        fprintf(' (Gaussian width: %.1f ms)', psth_gaussian_width_ms);
+    end
+    fprintf('\n');
     % NEW APPROACH: Calculate artifact window based on blank durations from detectStimTimesTemplate
     % plus a hardcoded postBlankIgnore value
     postBlankIgnore = 0.5; % Hardcoded to 0.5 ms additional time after blank end
@@ -474,9 +484,16 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             end
             spikeTimes_cleaned_s = sort(spikeTimes_cleaned_s(:));
             
-            % Calculate response PSTH
-            [response, resp_metrics] = calculate_psth_metrics(...
-                spikeTimes_cleaned_s, stimTimes, psth_window_s, psth_bin_width_s);
+            % Calculate response PSTH with smoothing parameters
+            if strcmp(psth_smoothing_method, 'ssvkernel')
+                [response, resp_metrics] = calculate_psth_metrics(...
+                    spikeTimes_cleaned_s, stimTimes, psth_window_s, psth_bin_width_s, ...
+                    'smoothing_method', 'ssvkernel');
+            else
+                [response, resp_metrics] = calculate_psth_metrics(...
+                    spikeTimes_cleaned_s, stimTimes, psth_window_s, psth_bin_width_s, ...
+                    'smoothing_method', 'gaussian', 'gaussian_width_ms', psth_gaussian_width_ms);
+            end
             
             if isempty(response.psth_samples)
                 continue;  % Skip if no spikes in response window
@@ -535,8 +552,16 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                         spikeTimes_cleaned_baseline_s >= (stimTime + blank_end_offset_s));
                 end
                 
-                [~, base_metrics] = calculate_psth_metrics(...
-                    spikeTimes_cleaned_baseline_s, stimTimes, current_baseline_window_s, psth_bin_width_s);
+                % Calculate baseline PSTH with same smoothing parameters
+                if strcmp(psth_smoothing_method, 'ssvkernel')
+                    [~, base_metrics] = calculate_psth_metrics(...
+                        spikeTimes_cleaned_baseline_s, stimTimes, current_baseline_window_s, psth_bin_width_s, ...
+                        'smoothing_method', 'ssvkernel');
+                else
+                    [~, base_metrics] = calculate_psth_metrics(...
+                        spikeTimes_cleaned_baseline_s, stimTimes, current_baseline_window_s, psth_bin_width_s, ...
+                        'smoothing_method', 'gaussian', 'gaussian_width_ms', psth_gaussian_width_ms);
+                end
                 baseline_aucs(i) = base_metrics.auc;
                 
                 if isempty(all_baseline_psth_smooth)
@@ -564,6 +589,53 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 halfRmax_val = NaN;
             end
             
+            % Calculate d-prime for stimulus response significance
+            % First calculate trial-by-trial firing rates for baseline and post-stim periods
+            baseline_window_s_dprime = [-psth_window_s(2), -psth_window_s(1)]; % Same duration as post-stim, but before
+            baseline_firing_rates_dprime = [];
+            poststim_firing_rates_dprime = [];
+            
+            for stimIdx = 1:length(stimTimes)
+                stimTime = stimTimes(stimIdx);
+                
+                % Baseline firing rate for this trial (with artifact exclusion for consistency)
+                baseline_start = stimTime + baseline_window_s_dprime(1);
+                baseline_end = stimTime + baseline_window_s_dprime(2);
+                % Apply artifact blanking to baseline window (for consistency with post-stim)
+                artifact_start_baseline = stimTime + baseline_window_s_dprime(1) + artifact_window_ms(1)/1000;
+                artifact_end_baseline = stimTime + baseline_window_s_dprime(1) + artifact_window_ms(2)/1000;
+                baseline_spikes = all_spike_times_s(...
+                    (all_spike_times_s >= baseline_start & all_spike_times_s < baseline_end) & ...
+                    ~(all_spike_times_s >= artifact_start_baseline & all_spike_times_s < artifact_end_baseline));
+                baseline_duration = baseline_window_s_dprime(2) - baseline_window_s_dprime(1) - (artifact_window_ms(2) - artifact_window_ms(1))/1000;
+                baseline_firing_rates_dprime(stimIdx) = length(baseline_spikes) / baseline_duration;
+                
+                % Post-stim firing rate for this trial (with artifact exclusion)
+                poststim_start = stimTime + psth_window_s(1);
+                poststim_end = stimTime + psth_window_s(2);
+                poststim_spikes = all_spike_times_s(...
+                    (all_spike_times_s >= poststim_start & all_spike_times_s < poststim_end) & ...
+                    ~(all_spike_times_s >= (stimTime + artifact_window_ms(1)/1000) & ...
+                      all_spike_times_s < (stimTime + artifact_window_ms(2)/1000)));
+                poststim_duration = psth_window_s(2) - psth_window_s(1) - (artifact_window_ms(2) - artifact_window_ms(1))/1000;
+                poststim_firing_rates_dprime(stimIdx) = length(poststim_spikes) / poststim_duration;
+            end
+            
+            % Calculate statistics for d-prime
+            baseline_mean_hz_dprime = mean(baseline_firing_rates_dprime);
+            baseline_std_hz_dprime = std(baseline_firing_rates_dprime);
+            poststim_mean_hz_dprime = mean(poststim_firing_rates_dprime);
+            poststim_std_hz_dprime = std(poststim_firing_rates_dprime);
+            
+            % Calculate d-prime (d') - signal detection theory measure
+            % d' = (μ_post - μ_baseline) / √((σ²_post + σ²_baseline) / 2)
+            if baseline_std_hz_dprime == 0 && poststim_std_hz_dprime == 0
+                d_prime = abs(poststim_mean_hz_dprime - baseline_mean_hz_dprime);
+            else
+                pooled_variance = (baseline_std_hz_dprime^2 + poststim_std_hz_dprime^2) / 2;
+                d_prime = (poststim_mean_hz_dprime - baseline_mean_hz_dprime) / sqrt(pooled_variance);
+            end
+            
             % Store channel data for later processing
             valid_channel_count = valid_channel_count + 1;
             
@@ -588,6 +660,9 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             temp_data{valid_channel_count}.halfRmax_time_s = halfRmax_time_s;
             temp_data{valid_channel_count}.halfRmax_val = halfRmax_val;
             temp_data{valid_channel_count}.current_baseline_window_s = current_baseline_window_s;
+            temp_data{valid_channel_count}.d_prime = d_prime;
+            temp_data{valid_channel_count}.baseline_firing_rates_dprime = baseline_firing_rates_dprime;
+            temp_data{valid_channel_count}.poststim_firing_rates_dprime = poststim_firing_rates_dprime;
             
             % Store results for networkResponse
             networkResponse(valid_channel_count).channel_id = channel_id;
@@ -599,6 +674,11 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             networkResponse(valid_channel_count).peak_firing_rate_hz = resp_metrics.peak_firing_rate;
             networkResponse(valid_channel_count).peak_time_ms = resp_metrics.peak_time_s * 1000;
             networkResponse(valid_channel_count).halfRmax_time_ms = halfRmax_time_s * 1000;
+            networkResponse(valid_channel_count).d_prime = d_prime;
+            networkResponse(valid_channel_count).baseline_mean_hz = baseline_mean_hz_dprime;
+            networkResponse(valid_channel_count).baseline_std_hz = baseline_std_hz_dprime;
+            networkResponse(valid_channel_count).poststim_mean_hz = poststim_mean_hz_dprime;
+            networkResponse(valid_channel_count).poststim_std_hz = poststim_std_hz_dprime;
         end
         
         % Second pass: identify top 5 channels with corrected AUC > 0.5 for plotting
@@ -663,46 +743,90 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 legend([p1_diag, p2_diag], 'Response', 'Mean Baseline', 'Location', 'Best');
                 grid on;
                 
-                % Subplot 3 (left): Smoothed response PSTH with metrics
+                % Subplot 3: Smoothed response PSTH with metrics and dual y-axes
                 ax3 = subplot(2, 2, [1, 3]); hold on;
-                edges_s = psth_window_s(1):psth_bin_width_s:psth_window_s(2);
-                bar(edges_s * 1000, data.response.psth_histogram, 1, ...
-                    'FaceColor', 0.7*[1 1 1], 'EdgeColor', 0.8*[1 1 1], 'HandleVisibility', 'off');
-                plot(data.resp_metrics.time_vector_s * 1000, data.resp_metrics.psth_smooth, ...
-                    'r-', 'LineWidth', 2, 'DisplayName', 'Smoothed PSTH');
-                plot(data.resp_metrics.peak_time_s*1000, data.resp_metrics.peak_firing_rate, ...
-                    'bo', 'MarkerFaceColor', 'b', 'MarkerSize', 7, 'DisplayName', 'R_{max}');
-                text(data.resp_metrics.peak_time_s*1000, data.resp_metrics.peak_firing_rate, ...
-                    sprintf(' R_{max}: %.1f Hz', data.resp_metrics.peak_firing_rate), ...
+                
+                % Use already calculated d-prime statistics for z-score PSTH analysis
+                % Handle zero std case (if all baseline trials have identical firing rates)
+                baseline_std_hz_safe = baseline_std_hz_dprime;
+                if baseline_std_hz_safe == 0
+                    baseline_std_hz_safe = eps; % Use machine epsilon to avoid division by zero
+                end
+                
+                % Calculate z-score for the smoothed PSTH using d-prime baseline statistics
+                zscore_psth = (data.resp_metrics.psth_smooth - baseline_mean_hz_dprime) ./ baseline_std_hz_safe;
+                
+                % Calculate trial-based z-score for reference using d-prime statistics
+                trial_zscore = (poststim_mean_hz_dprime - baseline_mean_hz_dprime) / baseline_std_hz_safe;
+                
+                fprintf('Ch %d: Baseline=%.1f±%.1f Hz (n=%d trials), PostStim=%.1f±%.1f Hz, Z=%.1f, d''=%.2f, Max PSTH Z=%.1f\n', ...
+                    data.channel_id, baseline_mean_hz_dprime, baseline_std_hz_dprime, length(baseline_firing_rates_dprime), ...
+                    poststim_mean_hz_dprime, poststim_std_hz_dprime, trial_zscore, d_prime, max(zscore_psth));
+                
+                % DEBUG: Check if spike data is being shared between channels
+                fprintf('  DEBUG Ch %d: Total spikes=%d, Unique spike times (first 5): [%.3f, %.3f, %.3f, %.3f, %.3f]\n', ...
+                    data.channel_id, length(all_spike_times_s), ...
+                    all_spike_times_s(min(1,end)), all_spike_times_s(min(2,end)), all_spike_times_s(min(3,end)), ...
+                    all_spike_times_s(min(4,end)), all_spike_times_s(min(5,end)));
+                fprintf('  Individual trial baseline rates: [%.1f, %.1f, %.1f, %.1f, %.1f] Hz (showing first 5)\n', ...
+                    baseline_firing_rates_dprime(min(1,end)), baseline_firing_rates_dprime(min(2,end)), baseline_firing_rates_dprime(min(3,end)), ...
+                    baseline_firing_rates_dprime(min(4,end)), baseline_firing_rates_dprime(min(5,end)));
+                fprintf('  Individual trial post-stim rates: [%.1f, %.1f, %.1f, %.1f, %.1f] Hz (showing first 5)\n', ...
+                    poststim_firing_rates_dprime(min(1,end)), poststim_firing_rates_dprime(min(2,end)), poststim_firing_rates_dprime(min(3,end)), ...
+                    poststim_firing_rates_dprime(min(4,end)), poststim_firing_rates_dprime(min(5,end)));
+                
+                % Debug: Print baseline window details
+                fprintf('  Baseline window: [%.1f, %.1f] ms, Post-stim: [%.1f, %.1f] ms, Artifact: [%.1f, %.1f] ms\n', ...
+                    baseline_window_s_dprime(1)*1000, baseline_window_s_dprime(2)*1000, ...
+                    psth_window_s(1)*1000, psth_window_s(2)*1000, ...
+                    artifact_window_ms(1), artifact_window_ms(2));
+                
+                % Plot Z-score PSTH only
+                p_psth_zscore = plot(data.resp_metrics.time_vector_s * 1000, zscore_psth, ...
+                    'r-', 'LineWidth', 2, 'DisplayName', 'Z-score PSTH');
+                
+                % Calculate z-score equivalent of peak and half-max markers
+                [zscore_peak_val, zscore_peak_idx] = max(zscore_psth);
+                zscore_peak_time_ms = data.resp_metrics.time_vector_s(zscore_peak_idx) * 1000;
+                
+                % Plot peak marker in z-score units
+                plot(zscore_peak_time_ms, zscore_peak_val, ...
+                    'bo', 'MarkerFaceColor', 'b', 'MarkerSize', 7, 'HandleVisibility', 'off');
+                text(zscore_peak_time_ms, zscore_peak_val, ...
+                    sprintf(' Z_{max}: %.1f (%.1f Hz)', zscore_peak_val, data.resp_metrics.peak_firing_rate), ...
                     'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left', ...
                     'Color', 'k', 'FontWeight', 'bold');
                 
-                if ~isnan(data.halfRmax_time_s)
-                    plot(data.halfRmax_time_s*1000, data.halfRmax_val, ...
-                        'go', 'MarkerFaceColor', 'g', 'MarkerSize', 7, 'DisplayName', 'Half R_{max}');
-                    text(data.halfRmax_time_s*1000, data.halfRmax_val, ...
-                        sprintf(' Half R_{max} @ %.1f ms', data.halfRmax_time_s*1000), ...
+                % Calculate half-max in z-score units
+                zscore_halfmax = zscore_peak_val / 2;
+                zscore_halfmax_idx = find(zscore_psth(zscore_peak_idx:end) <= zscore_halfmax, 1, 'first');
+                
+                if ~isempty(zscore_halfmax_idx)
+                    zscore_halfmax_idx = zscore_halfmax_idx + zscore_peak_idx - 1;
+                    zscore_halfmax_time_ms = data.resp_metrics.time_vector_s(zscore_halfmax_idx) * 1000;
+                    zscore_halfmax_val = zscore_psth(zscore_halfmax_idx);
+                    
+                    plot(zscore_halfmax_time_ms, zscore_halfmax_val, ...
+                        'go', 'MarkerFaceColor', 'g', 'MarkerSize', 7, 'HandleVisibility', 'off');
+                    text(zscore_halfmax_time_ms, zscore_halfmax_val, ...
+                        sprintf(' Half Z_{max} @ %.1f ms', zscore_halfmax_time_ms), ...
                         'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
                         'Color', 'k', 'FontWeight', 'bold');
                 end
-                hold off;
-                ylabel('Firing Rate (spikes/s)');
+                
+                ylabel('Z-score');
                 xlabel('Time from stimulus (ms)');
-                title('Smoothed Response PSTH & Metrics');
-                legend('Location', 'northeast');
+                title('Z-score PSTH & Metrics');
+                legend('Z-score PSTH', 'Location', 'northeast');
                 grid on;
                 
                 linkaxes([ax1, ax2, ax3], 'x');
                 xlim(psth_window_ms);
                 
-                % Save plot in both PNG and SVG formats
-                plot_filename_base = fullfile(patternFigFolder, sprintf('Individual_PSTH_and_Raster_channel_%d', data.channel_id));
-                
-                % Save as PNG
-                pipelineSaveFig(plot_filename_base, {'.png'}, false, fig);
-                
-                % Save as SVG
-                pipelineSaveFig(plot_filename_base, {'.svg'}, true, fig);
+                % Save plot using pipeline parameters
+                figName = sprintf('Individual_PSTH_and_Raster_channel_%d', data.channel_id);
+                figPath = fullfile(patternFigFolder, figName);
+                pipelineSaveFig(figPath, Params.figExt, Params.fullSVG, fig);
                 
                 close(fig);
             end
