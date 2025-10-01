@@ -432,6 +432,14 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     
     fprintf('Creating consolidated firing rate matrix: %d trials x %d channels\n', numTrialsTotal, numChannels);
     
+    % Pre-calculate constants to avoid redundant calculations
+    baseline_window_s_dprime = [-psth_window_s(2), -psth_window_s(1)]; % Same duration as post-stim, but before
+    analysis_window_duration_s = psth_window_s(2) - psth_window_s(1);
+    effective_window_duration = analysis_window_duration_s - (artifact_window_ms(2) - artifact_window_ms(1))/1000;
+    artifact_offset_s = artifact_window_ms / 1000; % Convert to seconds once
+    use_ssvkernel = strcmp(psth_smoothing_method, 'ssvkernel'); % Evaluate once
+    psth_window_ms = psth_window_s * 1000; % Convert once for plotting
+    
     % Loop through each stimulation pattern for individual PSTH analysis
     for patternIdx = 1:length(spikeData.stimPatterns)
         stimTimes = spikeData.stimPatterns{patternIdx};  % Get stim times for this pattern
@@ -474,18 +482,18 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 continue;  % Skip if no spikes
             end
             
-            % Remove spikes within artifact window for each stimulus
+            % Remove spikes within artifact window for each stimulus (using pre-calculated offsets)
             spikeTimes_cleaned_s = all_spike_times_s;
             for stimIdx = 1:length(stimTimes)
                 stimTime = stimTimes(stimIdx);
                 spikeTimes_cleaned_s = spikeTimes_cleaned_s(...
-                    spikeTimes_cleaned_s < (stimTime + artifact_window_ms(1)/1000) | ...
-                    spikeTimes_cleaned_s >= (stimTime + artifact_window_ms(2)/1000));
+                    spikeTimes_cleaned_s < (stimTime + artifact_offset_s(1)) | ...
+                    spikeTimes_cleaned_s >= (stimTime + artifact_offset_s(2)));
             end
             spikeTimes_cleaned_s = sort(spikeTimes_cleaned_s(:));
             
-            % Calculate response PSTH with smoothing parameters
-            if strcmp(psth_smoothing_method, 'ssvkernel')
+            % Calculate response PSTH with smoothing parameters (using pre-calculated boolean)
+            if use_ssvkernel
                 [response, resp_metrics] = calculate_psth_metrics(...
                     spikeTimes_cleaned_s, stimTimes, psth_window_s, psth_bin_width_s, ...
                     'smoothing_method', 'ssvkernel');
@@ -499,35 +507,58 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 continue;  % Skip if no spikes in response window
             end
             
-            % Calculate firing rates for each trial in post-stim window (for consolidated matrix)
-            % Only calculate once per channel across all trials
+            % Calculate firing rates for baseline and post-stim periods for ALL trials (consolidated + d-prime)
+            % Using pre-calculated constants to avoid redundant calculations
+            
+            % Initialize arrays for this channel's firing rates
+            baseline_firing_rates_all_trials = [];
+            poststim_firing_rates_all_trials = [];
+            
+            % Calculate for consolidated matrix (all trials across all patterns) - only once per channel
             if patternIdx == 1  % Calculate consolidated matrix only once per channel
-                % Duration of analysis window in seconds
-                analysis_window_duration_s = psth_window_s(2) - psth_window_s(1);
-                
                 for trialIdx = 1:numTrialsTotal
                     stimTime = allStimTimesConsolidated(trialIdx);
                     
-                    % Count spikes in post-stim window for this trial (excluding artifact window)
+                    % Post-stim firing rate calculation (using pre-calculated offsets)
                     trial_window_start = stimTime + psth_window_s(1);
                     trial_window_end = stimTime + psth_window_s(2);
+                    artifact_start = stimTime + artifact_offset_s(1);
+                    artifact_end = stimTime + artifact_offset_s(2);
                     
-                    % Remove artifact window from spike counting
-                    artifact_start = stimTime + artifact_window_ms(1)/1000;
-                    artifact_end = stimTime + artifact_window_ms(2)/1000;
-                    
-                    % Find spikes in analysis window but outside artifact window
-                    spikes_in_window = all_spike_times_s(...
+                    spikes_in_poststim_window = all_spike_times_s(...
                         (all_spike_times_s >= trial_window_start & all_spike_times_s <= trial_window_end) & ...
                         ~(all_spike_times_s >= artifact_start & all_spike_times_s < artifact_end));
                     
-                    % Calculate firing rate for this trial and electrode
-                    num_spikes = length(spikes_in_window);
-                    effective_window_duration = analysis_window_duration_s - (artifact_window_ms(2) - artifact_window_ms(1))/1000;
-                    firing_rate_hz = num_spikes / effective_window_duration;
-                    
+                    firing_rate_hz = length(spikes_in_poststim_window) / effective_window_duration;
                     avgFiringRateMatrix(trialIdx, channelIdx) = firing_rate_hz;
                 end
+            end
+            
+            % Calculate for d-prime analysis (current pattern trials only)
+            for stimIdx = 1:length(stimTimes)
+                stimTime = stimTimes(stimIdx);
+                
+                % Baseline firing rate for this trial (using pre-calculated offsets)
+                baseline_start = stimTime + baseline_window_s_dprime(1);
+                baseline_end = stimTime + baseline_window_s_dprime(2);
+                artifact_start_baseline = stimTime + baseline_window_s_dprime(1) + artifact_offset_s(1);
+                artifact_end_baseline = stimTime + baseline_window_s_dprime(1) + artifact_offset_s(2);
+                
+                baseline_spikes = all_spike_times_s(...
+                    (all_spike_times_s >= baseline_start & all_spike_times_s < baseline_end) & ...
+                    ~(all_spike_times_s >= artifact_start_baseline & all_spike_times_s < artifact_end_baseline));
+                baseline_firing_rates_all_trials(stimIdx) = length(baseline_spikes) / effective_window_duration;
+                
+                % Post-stim firing rate for this trial (using pre-calculated offsets)
+                poststim_start = stimTime + psth_window_s(1);
+                poststim_end = stimTime + psth_window_s(2);
+                artifact_start = stimTime + artifact_offset_s(1);
+                artifact_end = stimTime + artifact_offset_s(2);
+                
+                poststim_spikes = all_spike_times_s(...
+                    (all_spike_times_s >= poststim_start & all_spike_times_s < poststim_end) & ...
+                    ~(all_spike_times_s >= artifact_start & all_spike_times_s < artifact_end));
+                poststim_firing_rates_all_trials(stimIdx) = length(poststim_spikes) / effective_window_duration;
             end
             
             % Calculate multiple baseline PSTHs
@@ -540,10 +571,10 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 end_s = -((i-1) * baseline_duration_s);
                 current_baseline_window_s = [start_s, end_s];
                 
-                % Apply artifact blanking to baseline window
+                % Apply artifact blanking to baseline window (using pre-calculated offsets)
                 spikeTimes_cleaned_baseline_s = spikeTimes_cleaned_s;
-                blank_start_offset_s = start_s + artifact_window_ms(1)/1000;
-                blank_end_offset_s = start_s + artifact_window_ms(2)/1000;
+                blank_start_offset_s = start_s + artifact_offset_s(1);
+                blank_end_offset_s = start_s + artifact_offset_s(2);
                 
                 for stimIdx = 1:length(stimTimes)
                     stimTime = stimTimes(stimIdx);
@@ -552,8 +583,8 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                         spikeTimes_cleaned_baseline_s >= (stimTime + blank_end_offset_s));
                 end
                 
-                % Calculate baseline PSTH with same smoothing parameters
-                if strcmp(psth_smoothing_method, 'ssvkernel')
+                % Calculate baseline PSTH with same smoothing parameters (using pre-calculated boolean)
+                if use_ssvkernel
                     [~, base_metrics] = calculate_psth_metrics(...
                         spikeTimes_cleaned_baseline_s, stimTimes, current_baseline_window_s, psth_bin_width_s, ...
                         'smoothing_method', 'ssvkernel');
@@ -589,43 +620,14 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 halfRmax_val = NaN;
             end
             
-            % Calculate d-prime for stimulus response significance
-            % First calculate trial-by-trial firing rates for baseline and post-stim periods
-            baseline_window_s_dprime = [-psth_window_s(2), -psth_window_s(1)]; % Same duration as post-stim, but before
-            baseline_firing_rates_dprime = [];
-            poststim_firing_rates_dprime = [];
+            % Calculate d-prime for stimulus response significance using pre-calculated firing rates
+            % Use the firing rates calculated above (baseline_firing_rates_all_trials, poststim_firing_rates_all_trials)
             
-            for stimIdx = 1:length(stimTimes)
-                stimTime = stimTimes(stimIdx);
-                
-                % Baseline firing rate for this trial (with artifact exclusion for consistency)
-                baseline_start = stimTime + baseline_window_s_dprime(1);
-                baseline_end = stimTime + baseline_window_s_dprime(2);
-                % Apply artifact blanking to baseline window (for consistency with post-stim)
-                artifact_start_baseline = stimTime + baseline_window_s_dprime(1) + artifact_window_ms(1)/1000;
-                artifact_end_baseline = stimTime + baseline_window_s_dprime(1) + artifact_window_ms(2)/1000;
-                baseline_spikes = all_spike_times_s(...
-                    (all_spike_times_s >= baseline_start & all_spike_times_s < baseline_end) & ...
-                    ~(all_spike_times_s >= artifact_start_baseline & all_spike_times_s < artifact_end_baseline));
-                baseline_duration = baseline_window_s_dprime(2) - baseline_window_s_dprime(1) - (artifact_window_ms(2) - artifact_window_ms(1))/1000;
-                baseline_firing_rates_dprime(stimIdx) = length(baseline_spikes) / baseline_duration;
-                
-                % Post-stim firing rate for this trial (with artifact exclusion)
-                poststim_start = stimTime + psth_window_s(1);
-                poststim_end = stimTime + psth_window_s(2);
-                poststim_spikes = all_spike_times_s(...
-                    (all_spike_times_s >= poststim_start & all_spike_times_s < poststim_end) & ...
-                    ~(all_spike_times_s >= (stimTime + artifact_window_ms(1)/1000) & ...
-                      all_spike_times_s < (stimTime + artifact_window_ms(2)/1000)));
-                poststim_duration = psth_window_s(2) - psth_window_s(1) - (artifact_window_ms(2) - artifact_window_ms(1))/1000;
-                poststim_firing_rates_dprime(stimIdx) = length(poststim_spikes) / poststim_duration;
-            end
-            
-            % Calculate statistics for d-prime
-            baseline_mean_hz_dprime = mean(baseline_firing_rates_dprime);
-            baseline_std_hz_dprime = std(baseline_firing_rates_dprime);
-            poststim_mean_hz_dprime = mean(poststim_firing_rates_dprime);
-            poststim_std_hz_dprime = std(poststim_firing_rates_dprime);
+            % Calculate statistics for d-prime using pre-calculated values
+            baseline_mean_hz_dprime = mean(baseline_firing_rates_all_trials);
+            baseline_std_hz_dprime = std(baseline_firing_rates_all_trials);
+            poststim_mean_hz_dprime = mean(poststim_firing_rates_all_trials);
+            poststim_std_hz_dprime = std(poststim_firing_rates_all_trials);
             
             % Calculate d-prime (d') - signal detection theory measure
             % d' = (μ_post - μ_baseline) / √((σ²_post + σ²_baseline) / 2)
@@ -640,8 +642,10 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             valid_channel_count = valid_channel_count + 1;
             
             % Get channel ID (use electrode info if available, otherwise use index)
-            if isfield(spikeData, 'stimInfo') && channelIdx <= length(spikeData.stimInfo) && ...
-               isfield(spikeData.stimInfo{channelIdx}, 'channelName')
+            % Optimize by checking field existence only once
+            has_channel_names = isfield(spikeData, 'stimInfo') && channelIdx <= length(spikeData.stimInfo) && ...
+                               isfield(spikeData.stimInfo{channelIdx}, 'channelName');
+            if has_channel_names
                 channel_id = spikeData.stimInfo{channelIdx}.channelName;
             else
                 channel_id = channelIdx;  % Fallback to channel index
@@ -661,8 +665,8 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             temp_data{valid_channel_count}.halfRmax_val = halfRmax_val;
             temp_data{valid_channel_count}.current_baseline_window_s = current_baseline_window_s;
             temp_data{valid_channel_count}.d_prime = d_prime;
-            temp_data{valid_channel_count}.baseline_firing_rates_dprime = baseline_firing_rates_dprime;
-            temp_data{valid_channel_count}.poststim_firing_rates_dprime = poststim_firing_rates_dprime;
+            temp_data{valid_channel_count}.baseline_firing_rates_dprime = baseline_firing_rates_all_trials;
+            temp_data{valid_channel_count}.poststim_firing_rates_dprime = poststim_firing_rates_all_trials;
             
             % Store results for networkResponse
             networkResponse(valid_channel_count).channel_id = channel_id;
@@ -703,10 +707,10 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 
                 % Generate PSTH plot for this channel
                 fig = figure('Position', [100 100 1200 900], 'Visible', 'off');
-                psth_window_ms = psth_window_s * 1000;
+                % Use pre-calculated psth_window_ms
                 
-                sgtitle(sprintf('Pattern %d | Channel %d | Peak Rate: %.1f Hz | Corrected AUC: %.3f', ...
-                    patternIdx, data.channel_id, data.resp_metrics.peak_firing_rate, data.auc_corrected), 'FontWeight', 'bold');
+                sgtitle(sprintf('Pattern %d | Channel %d | Corrected AUC: %.3f | d'' = %.2f', ...
+                    patternIdx, data.channel_id, data.auc_corrected, data.d_prime), 'FontWeight', 'bold');
                 
                 % Subplot 1 (top right): Spike Raster Plot
                 ax1 = subplot(2, 2, 2); hold on;
@@ -760,7 +764,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 trial_zscore = (poststim_mean_hz_dprime - baseline_mean_hz_dprime) / baseline_std_hz_safe;
                 
                 fprintf('Ch %d: Baseline=%.1f±%.1f Hz (n=%d trials), PostStim=%.1f±%.1f Hz, Z=%.1f, d''=%.2f, Max PSTH Z=%.1f\n', ...
-                    data.channel_id, baseline_mean_hz_dprime, baseline_std_hz_dprime, length(baseline_firing_rates_dprime), ...
+                    data.channel_id, baseline_mean_hz_dprime, baseline_std_hz_dprime, length(data.baseline_firing_rates_dprime), ...
                     poststim_mean_hz_dprime, poststim_std_hz_dprime, trial_zscore, d_prime, max(zscore_psth));
                 
                 % DEBUG: Check if spike data is being shared between channels
@@ -769,16 +773,16 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                     all_spike_times_s(min(1,end)), all_spike_times_s(min(2,end)), all_spike_times_s(min(3,end)), ...
                     all_spike_times_s(min(4,end)), all_spike_times_s(min(5,end)));
                 fprintf('  Individual trial baseline rates: [%.1f, %.1f, %.1f, %.1f, %.1f] Hz (showing first 5)\n', ...
-                    baseline_firing_rates_dprime(min(1,end)), baseline_firing_rates_dprime(min(2,end)), baseline_firing_rates_dprime(min(3,end)), ...
-                    baseline_firing_rates_dprime(min(4,end)), baseline_firing_rates_dprime(min(5,end)));
+                    data.baseline_firing_rates_dprime(min(1,end)), data.baseline_firing_rates_dprime(min(2,end)), data.baseline_firing_rates_dprime(min(3,end)), ...
+                    data.baseline_firing_rates_dprime(min(4,end)), data.baseline_firing_rates_dprime(min(5,end)));
                 fprintf('  Individual trial post-stim rates: [%.1f, %.1f, %.1f, %.1f, %.1f] Hz (showing first 5)\n', ...
-                    poststim_firing_rates_dprime(min(1,end)), poststim_firing_rates_dprime(min(2,end)), poststim_firing_rates_dprime(min(3,end)), ...
-                    poststim_firing_rates_dprime(min(4,end)), poststim_firing_rates_dprime(min(5,end)));
+                    data.poststim_firing_rates_dprime(min(1,end)), data.poststim_firing_rates_dprime(min(2,end)), data.poststim_firing_rates_dprime(min(3,end)), ...
+                    data.poststim_firing_rates_dprime(min(4,end)), data.poststim_firing_rates_dprime(min(5,end)));
                 
-                % Debug: Print baseline window details
+                % Debug: Print baseline window details (using pre-calculated values)
                 fprintf('  Baseline window: [%.1f, %.1f] ms, Post-stim: [%.1f, %.1f] ms, Artifact: [%.1f, %.1f] ms\n', ...
                     baseline_window_s_dprime(1)*1000, baseline_window_s_dprime(2)*1000, ...
-                    psth_window_s(1)*1000, psth_window_s(2)*1000, ...
+                    psth_window_ms(1), psth_window_ms(2), ...
                     artifact_window_ms(1), artifact_window_ms(2));
                 
                 % Plot Z-score PSTH only
@@ -793,7 +797,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 plot(zscore_peak_time_ms, zscore_peak_val, ...
                     'bo', 'MarkerFaceColor', 'b', 'MarkerSize', 7, 'HandleVisibility', 'off');
                 text(zscore_peak_time_ms, zscore_peak_val, ...
-                    sprintf(' Z_{max}: %.1f (%.1f Hz)', zscore_peak_val, data.resp_metrics.peak_firing_rate), ...
+                    ' Z_{max}', ...
                     'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left', ...
                     'Color', 'k', 'FontWeight', 'bold');
                 
@@ -809,7 +813,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                     plot(zscore_halfmax_time_ms, zscore_halfmax_val, ...
                         'go', 'MarkerFaceColor', 'g', 'MarkerSize', 7, 'HandleVisibility', 'off');
                     text(zscore_halfmax_time_ms, zscore_halfmax_val, ...
-                        sprintf(' Half Z_{max} @ %.1f ms', zscore_halfmax_time_ms), ...
+                        ' Half Z_{max}', ...
                         'VerticalAlignment', 'top', 'HorizontalAlignment', 'left', ...
                         'Color', 'k', 'FontWeight', 'bold');
                 end
