@@ -410,14 +410,17 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             length(stimulatedChannels), num2str(stimulatedChannels));
     
     % Create consolidated stimulation times and pattern labels for all patterns
+    % Concatenate all stimulation times into single column vector
     allStimTimesConsolidated = [];
     stimPatternLabels = [];
     
     for patternIdx = 1:length(spikeData.stimPatterns)
         stimTimes = spikeData.stimPatterns{patternIdx};
         if ~isempty(stimTimes)
-            allStimTimesConsolidated = [allStimTimesConsolidated, stimTimes];
-            stimPatternLabels = [stimPatternLabels, repmat(patternIdx, 1, length(stimTimes))];
+            % Ensure stimTimes is a column vector and concatenate vertically
+            stimTimes = stimTimes(:);  % Convert to column vector
+            allStimTimesConsolidated = [allStimTimesConsolidated; stimTimes];
+            stimPatternLabels = [stimPatternLabels; repmat(patternIdx, length(stimTimes), 1)];
         end
     end
     
@@ -431,6 +434,11 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     avgFiringRateMatrix = NaN(numTrialsTotal, numChannels);
     
     fprintf('Creating consolidated firing rate matrix: %d trials x %d channels\n', numTrialsTotal, numChannels);
+    fprintf('  Pattern breakdown: ');
+    for patternIdx = 1:length(spikeData.stimPatterns)
+        fprintf('Pattern %d: %d trials, ', patternIdx, length(spikeData.stimPatterns{patternIdx}));
+    end
+    fprintf('\n');
     
     % Pre-calculate constants to avoid redundant calculations
     baseline_window_s_dprime = [-psth_window_s(2), -psth_window_s(1)]; % Same duration as post-stim, but before
@@ -851,13 +859,14 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % NaN values indicate stimulated channels (excluded from analysis)
     avgFiringRateMatrix_info = struct();
     avgFiringRateMatrix_info.description = 'Consolidated average firing rates (Hz) in post-stimulus window across all patterns';
-    avgFiringRateMatrix_info.dimensions = '[numTrialsTotal x numChannels]';
+    avgFiringRateMatrix_info.dimensions = sprintf('[%d trials x %d channels] - All stimulation times from all patterns in chronological order', numTrialsTotal, numChannels);
     avgFiringRateMatrix_info.analysis_window_s = psth_window_s;
     avgFiringRateMatrix_info.artifact_window_ms = artifact_window_ms;
     avgFiringRateMatrix_info.stimulated_channels_excluded = stimulatedChannels;
-    avgFiringRateMatrix_info.allStimTimesConsolidated = allStimTimesConsolidated;
-    avgFiringRateMatrix_info.stimPatternLabels = stimPatternLabels;
+    avgFiringRateMatrix_info.allStimTimesConsolidated = allStimTimesConsolidated;  % Column vector of all stim times chronologically
+    avgFiringRateMatrix_info.stimPatternLabels = stimPatternLabels;  % Column vector indicating which pattern each trial belongs to
     avgFiringRateMatrix_info.numTrialsTotal = numTrialsTotal;
+    avgFiringRateMatrix_info.note = 'Each row represents one stimulation trial, columns represent recording channels. allStimTimesConsolidated and stimPatternLabels are column vectors with matching indices.';
     
     % Create main output folder for consolidated data
     consolidatedFolder = fullfile(figFolder, 'Reservoir Computing Metrics');
