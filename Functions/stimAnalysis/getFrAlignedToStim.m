@@ -8,7 +8,12 @@ function [frAlignedToStim, rasterBins] = getFrAlignedToStim(spikeData, allStimTi
     
     numChannels = length(spikeData.stimInfo);
 
-    rasterWindow = [Params.preStimWindow(1), Params.postStimWindow(2)];
+    % Use centralized analysis window if available, otherwise fallback to old parameters
+    if isfield(Params, 'analysisWindow_s')
+        rasterWindow = Params.analysisWindow_s;
+    else
+        rasterWindow = [Params.preStimWindow(1), Params.postStimWindow(2)];
+    end
     rasterBinWidth = Params.rasterBinWidth; % 0.01;   % originally 0.025 
 
     rasterBins = rasterWindow(1):rasterBinWidth:rasterWindow(2);

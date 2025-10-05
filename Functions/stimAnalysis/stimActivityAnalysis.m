@@ -853,6 +853,77 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         end
     end
     
+    %% Calculate Time-to-First-Spike (Latency) Matrix using artifact window approach
+    % Initialize latency matrix: [numTrialsTotal x numChannels]
+    % Values: Time-to-first-spike in milliseconds after stimulus
+    % NaN indicates no spike found or stimulated channel (excluded from analysis)
+    latencyMatrix = NaN(numTrialsTotal, numChannels);
+    
+    % Use the same search window as the individual PSTH analysis for consistency
+    latency_search_window_s = psth_window_s;  % Copy from individual PSTH analysis window
+    
+    fprintf('Calculating time-to-first-spike latencies using artifact window approach...\n');
+    fprintf('  Search window: [%.1f, %.1f] ms post-stimulus (copied from PSTH analysis)\n', latency_search_window_s(1)*1000, latency_search_window_s(2)*1000);
+    fprintf('  Artifact window: [%.1f, %.1f] ms (excluded from search)\n', artifact_window_ms(1), artifact_window_ms(2));
+    
+    % Loop through each channel (excluding stimulated channels)
+    for channelIdx = 1:numChannels
+        % Skip stimulated channels
+        if ismember(channelIdx, stimulatedChannels)
+            continue; % Latency matrix already initialized with NaN for these channels
+        end
+        
+        % Extract spike times for current channel
+        if channelIdx > length(spikeData.spikeTimes) || ...
+           isempty(spikeData.spikeTimes{channelIdx}) || ...
+           ~isfield(spikeData.spikeTimes{channelIdx}, Params.SpikesMethod)
+            continue;  % Skip if no spike data
+        end
+        
+        all_spike_times_s = spikeData.spikeTimes{channelIdx}.(Params.SpikesMethod);
+        if isempty(all_spike_times_s)
+            continue;  % Skip if no spikes
+        end
+        
+        % Loop through each trial (all stimulation times across patterns)
+        for trialIdx = 1:numTrialsTotal
+            stimTime = allStimTimesConsolidated(trialIdx);
+            
+            % Define search window for this trial
+            search_start = stimTime + latency_search_window_s(1);
+            search_end = stimTime + latency_search_window_s(2);
+            
+            % Define artifact exclusion window (using same approach as PSTH analysis)
+            artifact_start = stimTime + artifact_offset_s(1);
+            artifact_end = stimTime + artifact_offset_s(2);
+            
+            % Find spikes in search window, excluding artifact period
+            valid_spikes = all_spike_times_s(...
+                (all_spike_times_s >= search_start & all_spike_times_s <= search_end) & ...
+                ~(all_spike_times_s >= artifact_start & all_spike_times_s < artifact_end));
+            
+            % Calculate latency to first valid spike
+            if ~isempty(valid_spikes)
+                first_spike_time = min(valid_spikes);
+                latency_s = first_spike_time - stimTime;
+                latency_ms = latency_s * 1000;  % Convert to milliseconds
+                latencyMatrix(trialIdx, channelIdx) = latency_ms;
+            end
+            % If no valid spikes found, latencyMatrix entry remains NaN
+        end
+    end
+    
+    % Calculate summary statistics
+    num_valid_latencies = sum(~isnan(latencyMatrix(:)));
+    num_total_possible = numTrialsTotal * (numChannels - length(stimulatedChannels));
+    detection_rate = num_valid_latencies / num_total_possible * 100;
+    
+    fprintf('  Latency calculation complete:\n');
+    fprintf('    Valid latencies: %d / %d possible (%.1f%% detection rate)\n', ...
+            num_valid_latencies, num_total_possible, detection_rate);
+    fprintf('    Mean latency: %.1f ms (excluding NaN values)\n', nanmean(latencyMatrix(:)));
+    fprintf('    Median latency: %.1f ms (excluding NaN values)\n', nanmedian(latencyMatrix(:)));
+
     % Save consolidated average firing rate matrix (outside the pattern loop)
     % Matrix dimensions: [numTrialsTotal x numChannels] 
     % Values: Average firing rate (Hz) in post-stim window with artifact exclusion
@@ -868,15 +939,35 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     avgFiringRateMatrix_info.numTrialsTotal = numTrialsTotal;
     avgFiringRateMatrix_info.note = 'Each row represents one stimulation trial, columns represent recording channels. allStimTimesConsolidated and stimPatternLabels are column vectors with matching indices.';
     
+    % Create latency matrix info structure
+    latencyMatrix_info = struct();
+    latencyMatrix_info.description = 'Time-to-first-spike latencies (ms) in post-stimulus window across all patterns';
+    latencyMatrix_info.dimensions = sprintf('[%d trials x %d channels] - All stimulation times from all patterns in chronological order', numTrialsTotal, numChannels);
+    latencyMatrix_info.search_window_s = latency_search_window_s;
+    latencyMatrix_info.artifact_window_ms = artifact_window_ms;
+    latencyMatrix_info.stimulated_channels_excluded = stimulatedChannels;
+    latencyMatrix_info.allStimTimesConsolidated = allStimTimesConsolidated;  % Column vector of all stim times chronologically
+    latencyMatrix_info.stimPatternLabels = stimPatternLabels;  % Column vector indicating which pattern each trial belongs to
+    latencyMatrix_info.numTrialsTotal = numTrialsTotal;
+    latencyMatrix_info.detection_rate_percent = detection_rate;
+    latencyMatrix_info.mean_latency_ms = nanmean(latencyMatrix(:));
+    latencyMatrix_info.median_latency_ms = nanmedian(latencyMatrix(:));
+    latencyMatrix_info.note = 'Each row represents one stimulation trial, columns represent recording channels. Values are latency in ms to first spike after stimulus (excluding artifact window). NaN indicates no spike detected or stimulated channel.';
+    
     % Create main output folder for consolidated data
     consolidatedFolder = fullfile(figFolder, 'Reservoir Computing Metrics');
     if ~exist(consolidatedFolder, 'dir')
         mkdir(consolidatedFolder);
     end
     
+    % Save firing rate matrix
     matrix_filename = fullfile(consolidatedFolder, 'avgFiringRateMatrix_consolidated.mat');
     save(matrix_filename, 'avgFiringRateMatrix', 'avgFiringRateMatrix_info');
-    
     fprintf('Saved consolidated firing rate matrix to: %s\n', matrix_filename);
+    
+    % Save latency matrix
+    latency_filename = fullfile(consolidatedFolder, 'latencyMatrix_consolidated.mat');
+    save(latency_filename, 'latencyMatrix', 'latencyMatrix_info');
+    fprintf('Saved consolidated latency matrix to: %s\n', latency_filename);
 
 end
