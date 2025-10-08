@@ -353,10 +353,10 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % Based on batch_psth_baseline_analysis.m functionality
     
     % PSTH Analysis Parameters
-    psth_window_s = [0, 0.02];           % 20ms analysis window post-stimulus
+    psth_window_s = [-0.02, 0.02];      % 40ms analysis window (20ms pre + 20ms post stimulus)
     psth_bin_width_s = 0.001;            % 1ms bin width for PSTH
     num_baseline_psths = 50;            % Number of baseline PSTHs 
-    baseline_duration_s = psth_window_s(2) - psth_window_s(1);  % Match analysis window duration
+    baseline_duration_s = psth_window_s(2) - 0;  % Match post-stimulus duration (from 0 to end of post-stim window)
     
     % PSTH Smoothing Parameters - MANUALLY SPECIFY HERE
     psth_smoothing_method = 'gaussian';  % Options: 'ssvkernel' or 'gaussian'
@@ -441,7 +441,10 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     fprintf('\n');
     
     % Pre-calculate constants to avoid redundant calculations
-    baseline_window_s_dprime = [-psth_window_s(2), -psth_window_s(1)]; % Same duration as post-stim, but before
+    % Calculate post-stim duration for baseline window sizing (for multiple baselines)
+    poststim_duration_s = psth_window_s(2) - 0;  % Duration from stimulus (0) to end of post-stim window
+    % D-prime baseline uses same duration as post-stim, starting backwards from stimulus time (0)
+    baseline_window_s_dprime = [-poststim_duration_s, 0]; % Same duration as post-stim, backwards from stimulus
     analysis_window_duration_s = psth_window_s(2) - psth_window_s(1);
     effective_window_duration = analysis_window_duration_s - (artifact_window_ms(2) - artifact_window_ms(1))/1000;
     artifact_offset_s = artifact_window_ms / 1000; % Convert to seconds once
@@ -574,9 +577,9 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             all_baseline_psth_smooth = [];
             
             for i = 1:num_baseline_psths
-                % Define baseline window moving backwards from stimulus
-                start_s = -(i * baseline_duration_s);
-                end_s = -((i-1) * baseline_duration_s);
+                % Define baseline window moving backwards from pre-stim time point
+                start_s = psth_window_s(1) - (i * baseline_duration_s);      % Start from pre-stim point and go backwards
+                end_s = psth_window_s(1) - ((i-1) * baseline_duration_s);    % End closer to pre-stim point
                 current_baseline_window_s = [start_s, end_s];
                 
                 % Apply artifact blanking to baseline window (using pre-calculated offsets)
