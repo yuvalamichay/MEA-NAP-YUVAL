@@ -93,7 +93,12 @@ function [psth_data, metrics] = calculate_psth_metrics(all_spike_times_s, stim_t
             % Create Gaussian kernel
             sigma_s = gaussian_width_s / (2 * sqrt(2 * log(2))); % Convert FWHM to sigma
             kernel_points = 5 * sigma_s / (t_s(2) - t_s(1)); % Kernel extends 5 sigma
-            kernel_t = linspace(-5*sigma_s, 5*sigma_s, round(2*kernel_points)+1);
+            n_points = round(2*kernel_points)+1;
+            % Ensure odd number of points to avoid indexing issues
+            if mod(n_points, 2) == 0
+                n_points = n_points + 1;
+            end
+            kernel_t = linspace(-5*sigma_s, 5*sigma_s, n_points);
             gaussian_kernel = exp(-0.5 * (kernel_t / sigma_s).^2) / (sigma_s * sqrt(2*pi));
             
             % Calculate spike density at each time point
