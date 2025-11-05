@@ -717,52 +717,14 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 data = temp_data{channel_data_idx};
                 
                 % Generate PSTH plot for this channel
-                fig = figure('Position', [100 100 1200 900], 'Visible', 'off');
+                fig = figure('Position', [100 100 1200 800], 'Visible', 'off');
                 % Use pre-calculated psth_window_ms
                 
                 sgtitle(sprintf('Pattern %d | Channel %d | Corrected AUC: %.3f | d'' = %.2f', ...
                     patternIdx, data.channel_id, data.auc_corrected, data.d_prime), 'FontWeight', 'bold');
                 
-                % Subplot 1 (top right): Spike Raster Plot
-                ax1 = subplot(2, 2, 2); hold on;
-                for trial_idx = 1:length(data.response.spikeTimes_byEvent)
-                    trial_spikes_s = data.response.spikeTimes_byEvent{trial_idx};
-                    if ~isempty(trial_spikes_s)
-                        plot(trial_spikes_s * 1000, trial_idx * ones(size(trial_spikes_s)), ...
-                            'r.', 'MarkerSize', 5);
-                    end
-                end
-                hold off;
-                set(gca, 'YDir', 'reverse');
-                xlim(psth_window_ms);
-                ylim([0 length(stimTimes)+1]);
-                ylabel('Trial Number');
-                xlabel('Time from stimulus (ms)');
-                title('Spike Raster (Response)');
-                grid on;
-                
-                % Subplot 2 (bottom right): Response vs Baselines comparison
-                ax2 = subplot(2, 2, 4); hold on;
-                baseline_time_ms = (data.base_metrics.time_vector_s - data.current_baseline_window_s(1)) * 1000;
-                for i = 1:num_baseline_psths
-                    plot(baseline_time_ms, data.all_baseline_psth_smooth(i, :), ...
-                        'Color', [0.8 0.8 0.8], 'LineWidth', 0.5);
-                end
-                p1_diag = plot(data.resp_metrics.time_vector_s*1000, data.resp_metrics.psth_smooth, ...
-                    'r-', 'LineWidth', 2);
-                p2_diag = plot(baseline_time_ms, data.mean_baseline_psth, 'k-', 'LineWidth', 2);
-                hold off;
-                title('Diagnostic: Response vs. Baselines');
-                ylabel('Firing Rate (spikes/s)');
-                xlabel('Time from stimulus (ms)');
-                legend([p1_diag, p2_diag], 'Response', 'Mean Baseline', 'Location', 'Best');
-                grid on;
-                
-                % Subplot 3: Smoothed response PSTH with metrics and dual y-axes
-                ax3 = subplot(2, 2, [1, 3]); hold on;
-                
+                % Calculate z-score metrics for saving (even though panel 1 is removed, we still need these values)
                 % Use already calculated d-prime statistics for z-score PSTH analysis
-                % Handle zero std case (if all baseline trials have identical firing rates)
                 baseline_std_hz_safe = baseline_std_hz_dprime;
                 if baseline_std_hz_safe == 0
                     baseline_std_hz_safe = eps; % Use machine epsilon to avoid division by zero
@@ -770,6 +732,24 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 
                 % Calculate z-score for the smoothed PSTH using d-prime baseline statistics
                 zscore_psth = (data.resp_metrics.psth_smooth - baseline_mean_hz_dprime) ./ baseline_std_hz_safe;
+                zscore_baseline_psth = (data.mean_baseline_psth - baseline_mean_hz_dprime) ./ baseline_std_hz_safe;
+                
+                % Calculate z-score equivalent of peak and half-max markers for saving
+                [zscore_peak_val, zscore_peak_idx] = max(zscore_psth);
+                zscore_peak_time_ms = data.resp_metrics.time_vector_s(zscore_peak_idx) * 1000;
+                
+                % Calculate half-max in z-score units for saving
+                zscore_halfmax = zscore_peak_val / 2;
+                zscore_halfmax_idx = find(zscore_psth(zscore_peak_idx:end) <= zscore_halfmax, 1, 'first');
+                
+                if ~isempty(zscore_halfmax_idx)
+                    zscore_halfmax_idx = zscore_halfmax_idx + zscore_peak_idx - 1;
+                    zscore_halfmax_time_ms = data.resp_metrics.time_vector_s(zscore_halfmax_idx) * 1000;
+                    zscore_halfmax_val = zscore_psth(zscore_halfmax_idx);
+                else
+                    zscore_halfmax_time_ms = NaN;
+                    zscore_halfmax_val = NaN;
+                end
                 
                 % Calculate trial-based z-score for reference using d-prime statistics
                 trial_zscore = (poststim_mean_hz_dprime - baseline_mean_hz_dprime) / baseline_std_hz_safe;
@@ -796,15 +776,44 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                     psth_window_ms(1), psth_window_ms(2), ...
                     artifact_window_ms(1), artifact_window_ms(2));
                 
-                % Plot Z-score PSTH only
-                p_psth_zscore = plot(data.resp_metrics.time_vector_s * 1000, zscore_psth, ...
-                    'r-', 'LineWidth', 2, 'DisplayName', 'Z-score PSTH');
+                % Panel 1 (top): Spike Raster Plot
+                ax1 = subplot(2, 1, 1); hold on;
+                for trial_idx = 1:length(data.response.spikeTimes_byEvent)
+                    trial_spikes_s = data.response.spikeTimes_byEvent{trial_idx};
+                    if ~isempty(trial_spikes_s)
+                        plot(trial_spikes_s * 1000, trial_idx * ones(size(trial_spikes_s)), ...
+                            'r.', 'MarkerSize', 5);
+                    end
+                end
+                hold off;
+                set(gca, 'YDir', 'reverse');
+                xlim(psth_window_ms);
+                ylim([0 length(stimTimes)+1]);
+                ylabel('Trial Number');
+                xlabel('Time from stimulus (ms)');
+                title('Spike Raster (Response)');
+                grid on;
                 
-                % Calculate z-score equivalent of peak and half-max markers
-                [zscore_peak_val, zscore_peak_idx] = max(zscore_psth);
-                zscore_peak_time_ms = data.resp_metrics.time_vector_s(zscore_peak_idx) * 1000;
+                % Panel 2 (bottom): Diagnostic plot with z-score y-axis and markers
+                ax2 = subplot(2, 1, 2); hold on;
+                baseline_time_ms = (data.base_metrics.time_vector_s - data.current_baseline_window_s(1)) * 1000;
                 
-                % Plot peak marker in z-score units
+                % Plot individual baseline PSTHs in z-score units
+                for i = 1:num_baseline_psths
+                    zscore_individual_baseline = (data.all_baseline_psth_smooth(i, :) - baseline_mean_hz_dprime) ./ baseline_std_hz_safe;
+                    plot(baseline_time_ms, zscore_individual_baseline, ...
+                        'Color', [0.8 0.8 0.8], 'LineWidth', 0.5);
+                end
+                
+                % Plot response PSTH in z-score units
+                p1_diag = plot(data.resp_metrics.time_vector_s*1000, zscore_psth, ...
+                    'r-', 'LineWidth', 2, 'DisplayName', 'Response (Z-score)');
+                
+                % Plot mean baseline PSTH in z-score units
+                p2_diag = plot(baseline_time_ms, zscore_baseline_psth, ...
+                    'k-', 'LineWidth', 2, 'DisplayName', 'Mean Baseline (Z-score)');
+                
+                % Add peak marker (Zmax) to response PSTH (using previously calculated values)
                 plot(zscore_peak_time_ms, zscore_peak_val, ...
                     'bo', 'MarkerFaceColor', 'b', 'MarkerSize', 7, 'HandleVisibility', 'off');
                 text(zscore_peak_time_ms, zscore_peak_val, ...
@@ -812,15 +821,8 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                     'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left', ...
                     'Color', 'k', 'FontWeight', 'bold');
                 
-                % Calculate half-max in z-score units
-                zscore_halfmax = zscore_peak_val / 2;
-                zscore_halfmax_idx = find(zscore_psth(zscore_peak_idx:end) <= zscore_halfmax, 1, 'first');
-                
-                if ~isempty(zscore_halfmax_idx)
-                    zscore_halfmax_idx = zscore_halfmax_idx + zscore_peak_idx - 1;
-                    zscore_halfmax_time_ms = data.resp_metrics.time_vector_s(zscore_halfmax_idx) * 1000;
-                    zscore_halfmax_val = zscore_psth(zscore_halfmax_idx);
-                    
+                % Add half-max decay point to response PSTH (using previously calculated values)
+                if ~isnan(zscore_halfmax_time_ms)
                     plot(zscore_halfmax_time_ms, zscore_halfmax_val, ...
                         'go', 'MarkerFaceColor', 'g', 'MarkerSize', 7, 'HandleVisibility', 'off');
                     text(zscore_halfmax_time_ms, zscore_halfmax_val, ...
@@ -829,13 +831,14 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                         'Color', 'k', 'FontWeight', 'bold');
                 end
                 
+                hold off;
+                title('Diagnostic: Response vs. Baselines (Z-score)');
                 ylabel('Z-score');
                 xlabel('Time from stimulus (ms)');
-                title('Z-score PSTH & Metrics');
-                legend('Z-score PSTH', 'Location', 'northeast');
+                legend([p1_diag, p2_diag], 'Response', 'Mean Baseline', 'Location', 'Best');
                 grid on;
                 
-                linkaxes([ax1, ax2, ax3], 'x');
+                linkaxes([ax1, ax2], 'x');
                 xlim(psth_window_ms);
                 
                 % Save plot using pipeline parameters
