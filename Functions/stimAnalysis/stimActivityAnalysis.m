@@ -362,11 +362,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     psth_smoothing_method = 'gaussian';  % Options: 'ssvkernel' or 'gaussian'
     psth_gaussian_width_ms = 1;          % Gaussian kernel width in ms (only used if method is 'gaussian')
     
-    fprintf('PSTH Smoothing: %s', psth_smoothing_method);
-    if ~strcmp(psth_smoothing_method, 'ssvkernel')
-        fprintf(' (Gaussian width: %.1f ms)', psth_gaussian_width_ms);
-    end
-    fprintf('\n');
+    % PSTH smoothing method configured
     % NEW APPROACH: Calculate artifact window based on blank durations from detectStimTimesTemplate
     % plus a hardcoded postBlankIgnore value
     postBlankIgnore = 0.5; % Hardcoded to 0.5 ms additional time after blank end
@@ -390,8 +386,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     artifact_window_end_ms = mode_blank_duration_ms + postBlankIgnore;
     artifact_window_ms = [0, artifact_window_end_ms]; % Window from stimTime to mode+postBlankIgnore
     
-    fprintf('Using blank duration-based artifact window: [0, %.2f] ms (mode duration: %.2f ms + %.2f ms post-blank ignore)\n', ...
-            artifact_window_end_ms, mode_blank_duration_ms, postBlankIgnore);
+    % Artifact window calculated based on blank durations
     
     % Create global list of stimulated channels to exclude from ALL pattern analyses
     % Only exclude channels with pattern > 0 (pattern 0 = no stimulation)
@@ -406,8 +401,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         end
     end
     stimulatedChannels = unique(stimulatedChannels);  % Remove duplicates
-    fprintf('Excluding %d stimulated channels from analysis across all patterns: [%s]\n', ...
-            length(stimulatedChannels), num2str(stimulatedChannels));
+    % Stimulated channels excluded from analysis
     
     % Create consolidated stimulation times and pattern labels for all patterns
     % Concatenate all stimulation times into single column vector
@@ -433,12 +427,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     numTrialsTotal = length(allStimTimesConsolidated);
     avgFiringRateMatrix = NaN(numTrialsTotal, numChannels);
     
-    fprintf('Creating consolidated firing rate matrix: %d trials x %d channels\n', numTrialsTotal, numChannels);
-    fprintf('  Pattern breakdown: ');
-    for patternIdx = 1:length(spikeData.stimPatterns)
-        fprintf('Pattern %d: %d trials, ', patternIdx, length(spikeData.stimPatterns{patternIdx}));
-    end
-    fprintf('\n');
+    % Creating consolidated firing rate matrix
     
     % Pre-calculate constants to avoid redundant calculations
     % Calculate post-stim duration for baseline window sizing (for multiple baselines)
@@ -708,8 +697,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             [~, sort_indices] = sort(auc_values(high_auc_indices), 'descend');
             top_channels_for_plotting = high_auc_indices(sort_indices(1:min(5, length(sort_indices))));
             
-            fprintf('Pattern %d: Found %d channels with corrected AUC > 0.5. Plotting top %d channels.\n', ...
-                patternIdx, length(high_auc_indices), length(top_channels_for_plotting));
+            % Plotting top channels with high AUC values
             
             % Generate plots only for selected channels
             for plot_idx = 1:length(top_channels_for_plotting)
@@ -754,27 +742,11 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 % Calculate trial-based z-score for reference using d-prime statistics
                 trial_zscore = (poststim_mean_hz_dprime - baseline_mean_hz_dprime) / baseline_std_hz_safe;
                 
-                fprintf('Ch %d: Baseline=%.1f±%.1f Hz (n=%d trials), PostStim=%.1f±%.1f Hz, Z=%.1f, d''=%.2f, Max PSTH Z=%.1f\n', ...
-                    data.channel_id, baseline_mean_hz_dprime, baseline_std_hz_dprime, length(data.baseline_firing_rates_dprime), ...
-                    poststim_mean_hz_dprime, poststim_std_hz_dprime, trial_zscore, d_prime, max(zscore_psth));
+                % Channel statistics calculated
                 
-                % DEBUG: Check if spike data is being shared between channels
-                fprintf('  DEBUG Ch %d: Total spikes=%d, Unique spike times (first 5): [%.3f, %.3f, %.3f, %.3f, %.3f]\n', ...
-                    data.channel_id, length(all_spike_times_s), ...
-                    all_spike_times_s(min(1,end)), all_spike_times_s(min(2,end)), all_spike_times_s(min(3,end)), ...
-                    all_spike_times_s(min(4,end)), all_spike_times_s(min(5,end)));
-                fprintf('  Individual trial baseline rates: [%.1f, %.1f, %.1f, %.1f, %.1f] Hz (showing first 5)\n', ...
-                    data.baseline_firing_rates_dprime(min(1,end)), data.baseline_firing_rates_dprime(min(2,end)), data.baseline_firing_rates_dprime(min(3,end)), ...
-                    data.baseline_firing_rates_dprime(min(4,end)), data.baseline_firing_rates_dprime(min(5,end)));
-                fprintf('  Individual trial post-stim rates: [%.1f, %.1f, %.1f, %.1f, %.1f] Hz (showing first 5)\n', ...
-                    data.poststim_firing_rates_dprime(min(1,end)), data.poststim_firing_rates_dprime(min(2,end)), data.poststim_firing_rates_dprime(min(3,end)), ...
-                    data.poststim_firing_rates_dprime(min(4,end)), data.poststim_firing_rates_dprime(min(5,end)));
+                % Debug information available for analysis
                 
-                % Debug: Print baseline window details (using pre-calculated values)
-                fprintf('  Baseline window: [%.1f, %.1f] ms, Post-stim: [%.1f, %.1f] ms, Artifact: [%.1f, %.1f] ms\n', ...
-                    baseline_window_s_dprime(1)*1000, baseline_window_s_dprime(2)*1000, ...
-                    psth_window_ms(1), psth_window_ms(2), ...
-                    artifact_window_ms(1), artifact_window_ms(2));
+                % Baseline window details calculated
                 
                 % Panel 1 (top): Spike Raster Plot
                 ax1 = subplot(2, 1, 1); hold on;
@@ -868,9 +840,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % Use the same search window as the individual PSTH analysis for consistency
     latency_search_window_s = psth_window_s;  % Copy from individual PSTH analysis window
     
-    fprintf('Calculating time-to-first-spike latencies using artifact window approach...\n');
-    fprintf('  Search window: [%.1f, %.1f] ms post-stimulus (copied from PSTH analysis)\n', latency_search_window_s(1)*1000, latency_search_window_s(2)*1000);
-    fprintf('  Artifact window: [%.1f, %.1f] ms (excluded from search)\n', artifact_window_ms(1), artifact_window_ms(2));
+    % Calculating time-to-first-spike latencies using artifact window approach
     
     % Loop through each channel (excluding stimulated channels)
     for channelIdx = 1:numChannels
@@ -924,11 +894,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     num_total_possible = numTrialsTotal * (numChannels - length(stimulatedChannels));
     detection_rate = num_valid_latencies / num_total_possible * 100;
     
-    fprintf('  Latency calculation complete:\n');
-    fprintf('    Valid latencies: %d / %d possible (%.1f%% detection rate)\n', ...
-            num_valid_latencies, num_total_possible, detection_rate);
-    fprintf('    Mean latency: %.1f ms (excluding NaN values)\n', nanmean(latencyMatrix(:)));
-    fprintf('    Median latency: %.1f ms (excluding NaN values)\n', nanmedian(latencyMatrix(:)));
+    % Latency calculation complete
 
     % Save consolidated average firing rate matrix (outside the pattern loop)
     % Matrix dimensions: [numTrialsTotal x numChannels] 
@@ -969,11 +935,11 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % Save firing rate matrix
     matrix_filename = fullfile(consolidatedFolder, 'avgFiringRateMatrix_consolidated.mat');
     save(matrix_filename, 'avgFiringRateMatrix', 'avgFiringRateMatrix_info');
-    fprintf('Saved consolidated firing rate matrix to: %s\n', matrix_filename);
+    % Consolidated firing rate matrix saved
     
     % Save latency matrix
     latency_filename = fullfile(consolidatedFolder, 'latencyMatrix_consolidated.mat');
     save(latency_filename, 'latencyMatrix', 'latencyMatrix_info');
-    fprintf('Saved consolidated latency matrix to: %s\n', latency_filename);
+    % Consolidated latency matrix saved
 
 end
