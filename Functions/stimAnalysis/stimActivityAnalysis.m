@@ -456,7 +456,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         end
         
         % Initialize storage for this pattern's results
-        networkResponse = [];
+        electrodeLevelResponse_pattern_x = [];
         valid_channel_count = 0;
         
         % First pass: collect all channel metrics to identify top channels for plotting
@@ -638,6 +638,14 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 d_prime = (poststim_mean_hz_dprime - baseline_mean_hz_dprime) / sqrt(pooled_variance);
             end
             
+            % Calculate z-score for networkResponse storage (also used for plotting)
+            % Z-score = (post-stim mean - baseline mean) / baseline std
+            baseline_std_hz_safe = baseline_std_hz_dprime;
+            if baseline_std_hz_safe == 0
+                baseline_std_hz_safe = eps; % Use machine epsilon to avoid division by zero
+            end
+            zscore_response = (poststim_mean_hz_dprime - baseline_mean_hz_dprime) / baseline_std_hz_safe;
+            
             % Store channel data for later processing
             valid_channel_count = valid_channel_count + 1;
             
@@ -667,28 +675,29 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             temp_data{valid_channel_count}.d_prime = d_prime;
             temp_data{valid_channel_count}.baseline_firing_rates_dprime = baseline_firing_rates_all_trials;
             temp_data{valid_channel_count}.poststim_firing_rates_dprime = poststim_firing_rates_all_trials;
+            temp_data{valid_channel_count}.baseline_mean_hz_dprime = baseline_mean_hz_dprime;
+            temp_data{valid_channel_count}.baseline_std_hz_safe = baseline_std_hz_safe;
+            temp_data{valid_channel_count}.zscore_response = zscore_response;
             
-            % Store results for networkResponse
-            networkResponse(valid_channel_count).channel_id = channel_id;
-            networkResponse(valid_channel_count).file_index = channelIdx;
-            networkResponse(valid_channel_count).pattern_id = patternIdx;
-            networkResponse(valid_channel_count).auc_response = resp_metrics.auc;
-            networkResponse(valid_channel_count).auc_baseline_mean = mean_baseline_auc;
-            networkResponse(valid_channel_count).auc_corrected = auc_corrected;
-            networkResponse(valid_channel_count).peak_firing_rate_hz = resp_metrics.peak_firing_rate;
-            networkResponse(valid_channel_count).peak_time_ms = resp_metrics.peak_time_s * 1000;
-            networkResponse(valid_channel_count).halfRmax_time_ms = halfRmax_time_s * 1000;
-            networkResponse(valid_channel_count).d_prime = d_prime;
-            networkResponse(valid_channel_count).baseline_mean_hz = baseline_mean_hz_dprime;
-            networkResponse(valid_channel_count).baseline_std_hz = baseline_std_hz_dprime;
-            networkResponse(valid_channel_count).poststim_mean_hz = poststim_mean_hz_dprime;
-            networkResponse(valid_channel_count).poststim_std_hz = poststim_std_hz_dprime;
+            % Store results for electrodeLevelResponse_pattern_x
+            electrodeLevelResponse_pattern_x(valid_channel_count).channel_id = channel_id;
+            electrodeLevelResponse_pattern_x(valid_channel_count).file_index = channelIdx;
+            electrodeLevelResponse_pattern_x(valid_channel_count).pattern_id = patternIdx;
+            electrodeLevelResponse_pattern_x(valid_channel_count).auc_response = resp_metrics.auc;
+            electrodeLevelResponse_pattern_x(valid_channel_count).auc_baseline_mean = mean_baseline_auc;
+            electrodeLevelResponse_pattern_x(valid_channel_count).auc_corrected = auc_corrected;
+            electrodeLevelResponse_pattern_x(valid_channel_count).peak_firing_rate_hz = resp_metrics.peak_firing_rate;
+            electrodeLevelResponse_pattern_x(valid_channel_count).peak_time_ms = resp_metrics.peak_time_s * 1000;
+            electrodeLevelResponse_pattern_x(valid_channel_count).halfRmax_time_ms = halfRmax_time_s * 1000;
+            electrodeLevelResponse_pattern_x(valid_channel_count).d_prime = d_prime;
+            electrodeLevelResponse_pattern_x(valid_channel_count).zscore = zscore_response;
+            electrodeLevelResponse_pattern_x(valid_channel_count).psth_window_s = psth_window_s;
         end
         
         % Second pass: identify top 5 channels with corrected AUC > 0.5 for plotting
         if ~isempty(temp_data)
             % Extract corrected AUC values
-            auc_values = [networkResponse.auc_corrected];
+            auc_values = [electrodeLevelResponse_pattern_x.auc_corrected];
             
             % Find channels with corrected AUC > 0.5
             high_auc_indices = find(auc_values > 0.5);
@@ -711,14 +720,11 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 sgtitle(sprintf('Pattern %d | Channel %d | Corrected AUC: %.3f | d'' = %.2f', ...
                     patternIdx, data.channel_id, data.auc_corrected, data.d_prime), 'FontWeight', 'bold');
                 
-                % Calculate z-score metrics for saving (even though panel 1 is removed, we still need these values)
-                % Use already calculated d-prime statistics for z-score PSTH analysis
-                baseline_std_hz_safe = baseline_std_hz_dprime;
-                if baseline_std_hz_safe == 0
-                    baseline_std_hz_safe = eps; % Use machine epsilon to avoid division by zero
-                end
+                % Use pre-calculated z-score statistics for PSTH plotting
+                baseline_mean_hz_dprime = data.baseline_mean_hz_dprime;
+                baseline_std_hz_safe = data.baseline_std_hz_safe;
                 
-                % Calculate z-score for the smoothed PSTH using d-prime baseline statistics
+                % Calculate z-score for the smoothed PSTH using pre-calculated baseline statistics
                 zscore_psth = (data.resp_metrics.psth_smooth - baseline_mean_hz_dprime) ./ baseline_std_hz_safe;
                 zscore_baseline_psth = (data.mean_baseline_psth - baseline_mean_hz_dprime) ./ baseline_std_hz_safe;
                 
@@ -739,8 +745,8 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                     zscore_halfmax_val = NaN;
                 end
                 
-                % Calculate trial-based z-score for reference using d-prime statistics
-                trial_zscore = (poststim_mean_hz_dprime - baseline_mean_hz_dprime) / baseline_std_hz_safe;
+                % Use pre-calculated z-score for trial-based reference
+                trial_zscore = data.zscore_response;
                 
                 % Channel statistics calculated
                 
@@ -822,12 +828,14 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             end
         end
         
-        % Save networkResponse data for this pattern
-        if ~isempty(networkResponse)
-            timestamp = datestr(now, 'ddmmmyyyy_HHMMSS');
+        % Save electrodeLevelResponse data for this pattern
+        if ~isempty(electrodeLevelResponse_pattern_x)
             output_filename = fullfile(patternFigFolder, ...
-                sprintf('networkResponse_pattern_%d_%s.mat', patternIdx, timestamp));
-            save(output_filename, 'networkResponse');
+                sprintf('electrodeLevelResponse_pattern_%d.mat', patternIdx));
+            
+            % Create dynamic variable name for saving
+            eval(sprintf('electrodeLevelResponse_pattern_%d = electrodeLevelResponse_pattern_x;', patternIdx));
+            save(output_filename, sprintf('electrodeLevelResponse_pattern_%d', patternIdx));
         end
     end
     
