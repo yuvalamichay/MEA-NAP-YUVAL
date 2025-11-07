@@ -99,12 +99,12 @@ if strcmp(stimDetectionMethod, 'blanking')
 end
 
 
-% --- START: TEMPLATE CALCULATION FOR 'longblank' METHOD ---
+% --- TEMPLATE CALCULATION FOR 'longblank' METHOD ---
 % This section is placed before the main channel loop for 'longblank' because
-% it needs to process data from all channels to create the templates.
+% it needs to process data from all channels to create the blank templates.
 if strcmp(stimDetectionMethod, 'longblank')
     
-    % --- Step 1: Pre-calculate blankStarts and blankEnds for all channels ---
+    % --- Step 1: Pre-calculate blankStarts and blankEnds for all channels using the hardcoded blank length ---
     all_channels_blank_starts = cell(numChannels, 1);
     all_channels_blank_ends = cell(numChannels, 1);
     num_blanks_per_channel = zeros(numChannels, 1);
@@ -113,7 +113,7 @@ if strcmp(stimDetectionMethod, 'longblank')
         channelDat = rawData(:, channel_idx);
         
         % Use hardcoded min_duration for blank detection
-        min_duration_hardcoded = 37;
+        min_duration_hardcoded = 37; % This minimum value detects all blanks
         
         change_points = [1; diff(channelDat) ~= 0];
         group_id = cumsum(change_points);
@@ -176,7 +176,6 @@ if strcmp(stimDetectionMethod, 'longblank')
         allBlankEndsTemplate = unique(allBlankEndsTemplate); % Keep unique template times
     end
 end
-% --- END: TEMPLATE CALCULATION FOR 'longblank' METHOD ---
 
 
 % Do electrical stimulation detection (and assign stimulation duration)
@@ -233,7 +232,7 @@ for channel_idx = 1:numChannels
 
         channelDat = rawData(:, channel_idx);
 
-        % First pass: Use Params.minBlankingDuration
+        % Second pass: Use Params.minBlankingDuration for blank detection
         min_duration = round(Params.minBlankingDuration * Params.fs);
 
         % Find where values change
