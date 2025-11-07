@@ -355,14 +355,14 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % for individual electrodes across different stimulation patterns. 
     %
     % KEY COMPUTATIONAL STEPS:
-    % 1. Analysis parameter configuration
+    % 1. Parameter setup
     % 2. Artifact window calculation
-    % 3. Channel exclusion and data organization
-    % 4. Stimulus time consolidation
-    % 5. Main analysis loop - per-pattern PSTH computation
-    % 6. Channel selection and visualization
+    % 3. Channel exclusion 
+    % 4. Stimulus time organization and data output organization
+    % 5. Per-pattern, per-electrode PSTH computation
+    % 6. Electrode selection and visualization
     % 7. Time-to-first-spike latency analysis
-    % 8. Consolidated data export for reservoir computing
+    % 8. Data export for reservoir computing analysis
 
     % -------------------------------------------------------------------------
     % STEP 1: ANALYSIS PARAMETER CONFIGURATION
@@ -442,7 +442,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % Initialize consolidated firing rate matrix for reservoir computing analysis
     % Dimensions: [numTrialsTotal x numChannels] where rows = stimulus trials, cols = recording channels
     numTrialsTotal = length(allStimTimesConsolidated);
-    avgFiringRateMatrix = NaN(numTrialsTotal, numChannels);
+    FiringRateMatrix = NaN(numTrialsTotal, numChannels);
     
     % Time window calculations
     poststim_duration_s = psth_window_s(2) - 0;  % Duration from stimulus to end of post-stim window
@@ -571,7 +571,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                     
                     % Convert spike count to firing rate (Hz)
                     firing_rate_hz = length(spikes_in_poststim_window) / effective_window_duration;
-                    avgFiringRateMatrix(trialIdx, channelIdx) = firing_rate_hz;
+                    FiringRateMatrix(trialIdx, channelIdx) = firing_rate_hz;
                 end
             end
             
@@ -709,14 +709,8 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             
             valid_channel_count = valid_channel_count + 1;
             
-            % Determine channel identifier (use channel name if available, otherwise index)
-            has_channel_names = isfield(spikeData, 'stimInfo') && channelIdx <= length(spikeData.stimInfo) && ...
-                               isfield(spikeData.stimInfo{channelIdx}, 'channelName');
-            if has_channel_names
-                channel_id = spikeData.stimInfo{channelIdx}.channelName;
-            else
-                channel_id = channelIdx;  % Fallback to channel index
-            end
+            % Use channel name from stimInfo
+            channel_id = spikeData.stimInfo{channelIdx}.channelName;
             
             % Store temporary data for calculations
             temp_data{valid_channel_count}.channelIdx = channelIdx;
@@ -989,16 +983,16 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % STEP 8.1: FIRING RATE MATRIX METADATA PREPARATION
     % -------------------------------------------------------------------------
     % Create comprehensive metadata structure for the consolidated firing rate matrix
-    avgFiringRateMatrix_info = struct();
-    avgFiringRateMatrix_info.description = 'Consolidated average firing rates (Hz) in post-stimulus window across all patterns';
-    avgFiringRateMatrix_info.dimensions = sprintf('[%d trials x %d channels] - All stimulation times from all patterns in chronological order', numTrialsTotal, numChannels);
-    avgFiringRateMatrix_info.analysis_window_s = psth_window_s;
-    avgFiringRateMatrix_info.artifact_window_ms = artifact_window_ms;
-    avgFiringRateMatrix_info.stimulated_channels_excluded = stimulatedChannels;
-    avgFiringRateMatrix_info.allStimTimesConsolidated = allStimTimesConsolidated;  % Column vector of all stim times chronologically
-    avgFiringRateMatrix_info.stimPatternLabels = stimPatternLabels;  % Column vector indicating which pattern each trial belongs to
-    avgFiringRateMatrix_info.numTrialsTotal = numTrialsTotal;
-    avgFiringRateMatrix_info.note = 'Each row represents one stimulation trial, columns represent recording channels. allStimTimesConsolidated and stimPatternLabels are column vectors with matching indices.';
+    FiringRateMatrix_info = struct();
+    FiringRateMatrix_info.description = 'Consolidated firing rates (Hz) in post-stimulus window across all patterns';
+    FiringRateMatrix_info.dimensions = sprintf('[%d trials x %d channels] - All stimulation times from all patterns in chronological order', numTrialsTotal, numChannels);
+    FiringRateMatrix_info.analysis_window_s = psth_window_s;
+    FiringRateMatrix_info.artifact_window_ms = artifact_window_ms;
+    FiringRateMatrix_info.stimulated_channels_excluded = stimulatedChannels;
+    FiringRateMatrix_info.allStimTimesConsolidated = allStimTimesConsolidated;  % Column vector of all stim times chronologically
+    FiringRateMatrix_info.stimPatternLabels = stimPatternLabels;  % Column vector indicating which pattern each trial belongs to
+    FiringRateMatrix_info.numTrialsTotal = numTrialsTotal;
+    FiringRateMatrix_info.note = 'Each row represents one stimulation trial, columns represent recording channels. allStimTimesConsolidated and stimPatternLabels are column vectors with matching indices.';
     
     % -------------------------------------------------------------------------
     % STEP 8.2: LATENCY MATRIX METADATA PREPARATION
@@ -1028,8 +1022,8 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     end
     
     % Export firing rate matrix 
-    matrix_filename = fullfile(consolidatedFolder, 'avgFiringRateMatrix_consolidated.mat');
-    save(matrix_filename, 'avgFiringRateMatrix', 'avgFiringRateMatrix_info');
+    matrix_filename = fullfile(consolidatedFolder, 'FiringRateMatrix_consolidated.mat');
+    save(matrix_filename, 'FiringRateMatrix', 'FiringRateMatrix_info');
     
     % Export latency matrix for 
     latency_filename = fullfile(consolidatedFolder, 'latencyMatrix_consolidated.mat');
