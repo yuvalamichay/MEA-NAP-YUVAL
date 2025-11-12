@@ -41,6 +41,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     ylabel_txt = 'Mean firing rate (spikes/s)';
     plotMetricAlignedToStim(frAlignedToStim, rasterBins, Info, Params, ...
     ylabel_txt, figFolder, figName, figureHandle)
+    close(figureHandle);  % Close the figure after saving
     
      % Do it for each pattern 
     for patternIdx = 1:length(spikeData.stimPatterns)
@@ -50,6 +51,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             spikeData, spikeData.stimPatterns{patternIdx}, Params);
         plotMetricAlignedToStim(frAlignedToStim, rasterBins, Info, Params, ...
                 ylabel_txt, figFolder, figName, figureHandle)
+        close(figureHandle);  % Close the figure after saving
     end
 
 
@@ -126,6 +128,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % save figure
     figName = '11_stimulation_amplitude_raster_and_psth';
     pipelineSaveFig(fullfile(figFolder, figName), Params.figExt, Params.fullSVG, gcf);
+    close(figureHandle);  % Close the figure after saving
 
     %% Spike Latency / Time-to-first-spike 
     
@@ -158,6 +161,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         figName = sprintf('spikeLatency_pattern_%.f_heatmap', patternIdx);
         figPath = fullfile(figFolder, figName);
         pipelineSaveFig(figPath, Params.figExt, Params.fullSVG, oneFigureHandle)
+        close(oneFigureHandle);  % Close the figure after saving
     end
 
     %% Plot heatmap of activity after stimulation 
@@ -218,6 +222,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         figName = sprintf('stimPattern_%.f_heatmap', patternIdx);
         figPath = fullfile(figFolder, figName);
         pipelineSaveFig(figPath, Params.figExt, Params.fullSVG, oneFigureHandle)
+        close(oneFigureHandle);  % Close the figure after saving
     end
 
 
@@ -277,6 +282,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     figName = 'stimPattern_activity_per_trial';
     figPath = fullfile(figFolder, figName);
     pipelineSaveFig(figPath, Params.figExt, Params.fullSVG, oneFigureHandle)
+    close(oneFigureHandle);  % Close the figure after saving
 
 
     %% Do decoding of which pattern was stimulated
@@ -347,6 +353,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     figName = 'stimPattern_decoding';
     figPath = fullfile(figFolder, figName);
     pipelineSaveFig(figPath, Params.figExt, Params.fullSVG, oneFigureHandle)
+    close(oneFigureHandle);  % Close the figure after saving
 
     %% ========================================================================
     %% SECTION: INDIVIDUAL ELECTRODE PSTH ANALYSIS
@@ -368,9 +375,9 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % STEP 1: ANALYSIS PARAMETER CONFIGURATION
     % -------------------------------------------------------------------------
     % Define temporal windows and binning parameters for PSTH analysis
-    psth_window_s = [-0.02, 0.02];      % Pre- to post-stim analysis window
+    psth_window_s = [-0.03, 0.03];      % Pre- to post-stim analysis window
     psth_bin_width_s = 0.001;            % Bin width for temporal resolution PSTH. NOTE: not currently functional but still passed as an argument
-    num_baseline_psths = 50;             % Number of baseline windows for baseline distribution
+    num_baseline_psths = 30;             % Number of baseline windows for baseline distribution
     baseline_duration_s = psth_window_s(2) - 0;  % Baseline window duration matches post-stim duration
     
     % Configure smoothing method for PSTH computation
