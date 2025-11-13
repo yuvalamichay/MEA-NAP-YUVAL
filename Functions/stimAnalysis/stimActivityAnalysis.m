@@ -923,8 +923,11 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % NaN indicates: no spike detected within search window OR stimulated channel (excluded)
     latencyMatrix = NaN(numTrialsTotal, numChannels);
     
-    % Use consistent search window with PSTH analysis for comparability
-    latency_search_window_s = psth_window_s;  % Copy from individual PSTH analysis window
+    % Define latency search window: only post-stimulus, post-artifact times
+    % Start search after artifact ends, search until end of post-stimulus window
+    latency_search_start_s = artifact_offset_s(2);  % After artifact window ends
+    latency_search_end_s = psth_window_s(2);        % End of post-stimulus window
+    latency_search_window_s = [latency_search_start_s, latency_search_end_s];
     
     % -------------------------------------------------------------------------
     % STEP 7.2: LATENCY COMPUTATION ACROSS ALL CHANNELS AND TRIALS
@@ -953,25 +956,24 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         for trialIdx = 1:numTrialsTotal
             stimTime = allStimTimesConsolidated(trialIdx);
             
-            % Define temporal search window for first-spike detection
-            search_start = stimTime + latency_search_window_s(1);
-            search_end = stimTime + latency_search_window_s(2);
+            % Define temporal search window for first-spike detection (post-artifact only)
+            search_start = stimTime + latency_search_window_s(1);  % Start after artifact ends
+            search_end = stimTime + latency_search_window_s(2);    % End of post-stimulus window
             
-            % Define artifact exclusion window 
-            artifact_start = stimTime + artifact_offset_s(1);
-            artifact_end = stimTime + artifact_offset_s(2);
-            
-            % Find valid spikes (within search window, outside artifact period)
+            % Find valid spikes (within post-stimulus, post-artifact search window only)
             valid_spikes = all_spike_times_s(...
-                (all_spike_times_s >= search_start & all_spike_times_s <= search_end) & ...
-                ~(all_spike_times_s >= artifact_start & all_spike_times_s < artifact_end));
+                all_spike_times_s >= search_start & all_spike_times_s <= search_end);
             
-            % Calculate latency to first valid spike
+            % Calculate latency to first valid spike (guaranteed to be positive)
             if ~isempty(valid_spikes)
                 first_spike_time = min(valid_spikes);
                 latency_s = first_spike_time - stimTime;
                 latency_ms = latency_s * 1000;  % Convert to milliseconds
-                latencyMatrix(trialIdx, channelIdx) = latency_ms;
+                
+                % Double-check that latency is positive (should always be true with new search window)
+                if latency_ms > 0
+                    latencyMatrix(trialIdx, channelIdx) = latency_ms;
+                end
             end
             % If no valid spikes found, latencyMatrix entry remains NaN
         end
@@ -1021,7 +1023,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     latencyMatrix_info.detection_rate_percent = detection_rate;
     latencyMatrix_info.mean_latency_ms = nanmean(latencyMatrix(:));
     latencyMatrix_info.median_latency_ms = nanmedian(latencyMatrix(:));
-    latencyMatrix_info.note = 'Each row represents one stimulation trial, columns represent recording channels. Values are latency in ms to first spike after stimulus (excluding artifact window). NaN indicates no spike detected or stimulated channel.';
+    latencyMatrix_info.note = 'Each row represents one stimulation trial, columns represent recording channels. Values are latency in ms to first spike after stimulus (post-artifact window only, guaranteed positive). NaN indicates no spike detected in search window or stimulated channel.';
     
     % -------------------------------------------------------------------------
     % STEP 8.3: CONSOLIDATED DATA EXPORT
