@@ -427,6 +427,12 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     stimulatedChannels = unique(stimulatedChannels);  % Remove duplicates
     
     % -------------------------------------------------------------------------
+    % INITIALIZE STIMULATION DATA COLLECTION STRUCTURE
+    % -------------------------------------------------------------------------
+    % Create structure to collect electrode response data for saving to experiment mat file
+    stimData = struct();
+    
+    % -------------------------------------------------------------------------
     % STEP 4: STIMULUS TIME CONSOLIDATION
     % -------------------------------------------------------------------------
     % Create chronologically ordered list of all stimulation times across patterns
@@ -678,7 +684,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             
             if ~isempty(halfRmax_idx)
                 halfRmax_idx = halfRmax_idx + Rmax_idx - 1;
-                halfRmax_time_s = resp_metrics.time_vector_s(halfRmax_idx);
+                halfRmax_time_s = resp_metrics.psth_smooth(halfRmax_idx);
                 halfRmax_val = resp_metrics.psth_smooth(halfRmax_idx);
             else
                 halfRmax_time_s = NaN;
@@ -890,17 +896,15 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         end % End of plotting condition
         
         % =====================================================================
-        % STEP 6.2: DATA EXPORT FOR PATTERN-SPECIFIC ANALYSIS
+        % STEP 6.2: DATA COLLECTION FOR STIMULATION ANALYSIS
         % =====================================================================
-        % Save computed electrode-level response metrics for the current pattern
+        % Collect computed electrode-level response metrics for the current pattern
+        % into the stimData structure for later saving to experiment mat file
         
         if ~isempty(electrodeLevelResponse_pattern_x)
-            output_filename = fullfile(patternFigFolder, ...
-                sprintf('electrodeLevelResponse_pattern_%d.mat', patternIdx));
-            
-            % Create dynamic variable name
-            eval(sprintf('electrodeLevelResponse_pattern_%d = electrodeLevelResponse_pattern_x;', patternIdx));
-            save(output_filename, sprintf('electrodeLevelResponse_pattern_%d', patternIdx));
+            % Store pattern data in stimData structure
+            patternFieldName = sprintf('electrodeLevelResponse_pattern_%d', patternIdx);
+            stimData.(patternFieldName) = electrodeLevelResponse_pattern_x;
         end
         
     end % End of pattern loop
@@ -1035,5 +1039,29 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % Export latency matrix for 
     latency_filename = fullfile(consolidatedFolder, 'latencyMatrix_consolidated.mat');
     save(latency_filename, 'latencyMatrix', 'latencyMatrix_info');
+    
+    %% ========================================================================
+    %% SAVE STIMULATION DATA TO EXPERIMENT MAT FILE
+    %% ========================================================================
+    % Save the collected stimulation analysis data to the experiment mat file
+    % for later aggregation into CSV files
+    
+    if ~isempty(stimData)
+        % Construct path to experiment mat file
+        experimentMatFolderPath = fullfile(Params.outputDataFolder, ...
+            Params.outputDataFolderName, 'ExperimentMatFiles');
+        experimentMatFname = strcat(char(Info.FN{1}),'_',Params.outputDataFolderName,'.mat');
+        experimentMatFpath = fullfile(experimentMatFolderPath, experimentMatFname);
+        
+        % Save stimData to the experiment file (append to existing data)
+        if exist(experimentMatFpath, 'file')
+            save(experimentMatFpath, 'stimData', '-append');
+            fprintf('Stimulation data saved to: %s\n', experimentMatFpath);
+        else
+            fprintf('Warning: Experiment mat file not found: %s\n', experimentMatFpath);
+        end
+    else
+        fprintf('Warning: No stimulation data collected for %s\n', Info.FN{1});
+    end
 
 end

@@ -592,6 +592,9 @@ if Params.startAnalysisStep < 3
             stimActivityAnalysis(spikeData, Params, expData.Info, ...
                 figFolder, oneFigureHandle);
         end
+        
+        % Save stimulation analysis data to CSV files
+        saveEphysStatsStim(ExpName, Params);
     end
     
     if Params.timeProcesses
