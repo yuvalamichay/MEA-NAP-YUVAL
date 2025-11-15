@@ -571,19 +571,19 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 for trialIdx = 1:numTrialsTotal
                     stimTime = allStimTimesConsolidated(trialIdx);
                     
-                    % Define analysis window for this trial
-                    trial_window_start = stimTime + psth_window_s(1);
-                    trial_window_end = stimTime + psth_window_s(2);
-                    artifact_start = stimTime + artifact_offset_s(1);
-                    artifact_end = stimTime + artifact_offset_s(2);
+                    % Define analysis window for this trial (POST-ARTIFACT TO POST-STIM ONLY)
+                    trial_window_start = stimTime + artifact_offset_s(2);  % Start AFTER artifact ends
+                    trial_window_end = stimTime + psth_window_s(2);        % End of post-stim window
                     
-                    % Count spikes in post-stimulus window, excluding artifact period
+                    % Count spikes in post-artifact to post-stimulus window only
                     spikes_in_poststim_window = all_spike_times_s(...
-                        (all_spike_times_s >= trial_window_start & all_spike_times_s <= trial_window_end) & ...
-                        ~(all_spike_times_s >= artifact_start & all_spike_times_s < artifact_end));
+                        all_spike_times_s >= trial_window_start & all_spike_times_s <= trial_window_end);
+                    
+                    % Calculate window duration (post-artifact to post-stim only)
+                    analysis_window_duration = trial_window_end - trial_window_start;
                     
                     % Convert spike count to firing rate (Hz)
-                    firing_rate_hz = length(spikes_in_poststim_window) / effective_window_duration;
+                    firing_rate_hz = length(spikes_in_poststim_window) / analysis_window_duration;
                     FiringRateMatrix(trialIdx, channelIdx) = firing_rate_hz;
                 end
             end
@@ -993,28 +993,79 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % Export consolidated matrices and metadata for downstream RC analysis
     
     % -------------------------------------------------------------------------
+    % STEP 8.0: EXACT SPIKE TIMES MATRIX COMPUTATION
+    % -------------------------------------------------------------------------
+    % Create cell array containing exact spike times for each trial-electrode combination
+    % Dimensions: [numTrialsTotal x numChannels] cell array
+    % Each cell contains column vector of spike times in ms post-stimulation
+    ExactSpikeTimes = cell(numTrialsTotal, numChannels);
+    
+    % Define analysis window for spike time extraction (same as firing rate analysis)
+    spike_extraction_window_s = psth_window_s;
+    
+    for channelIdx = 1:numChannels
+        % Skip stimulated channels (leave cells empty)
+        if ismember(channelIdx, stimulatedChannels)
+            continue; % ExactSpikeTimes already initialized as empty cells for these channels
+        end
+        
+        % Validate spike data availability for current channel
+        if channelIdx > length(spikeData.spikeTimes) || ...
+           isempty(spikeData.spikeTimes{channelIdx}) || ...
+           ~isfield(spikeData.spikeTimes{channelIdx}, Params.SpikesMethod)
+            continue;  % Skip channels with no spike data
+        end
+        
+        all_spike_times_s = spikeData.spikeTimes{channelIdx}.(Params.SpikesMethod);
+        if isempty(all_spike_times_s)
+            continue;  % Skip channels with no detected spikes
+        end
+        
+        % Process each stimulus trial across all patterns
+        for trialIdx = 1:numTrialsTotal
+            stimTime = allStimTimesConsolidated(trialIdx);
+            
+            % Define analysis window for this trial (POST-ARTIFACT TO POST-STIM ONLY)
+            trial_window_start = stimTime + artifact_offset_s(2);  % Start AFTER artifact ends
+            trial_window_end = stimTime + psth_window_s(2);        % End of post-stim window
+            
+            % Find spikes in post-artifact to post-stimulus window only
+            spikes_in_window = all_spike_times_s(...
+                all_spike_times_s >= trial_window_start & all_spike_times_s <= trial_window_end);
+            
+            % Convert to milliseconds post-stimulation and store as column vector
+            if ~isempty(spikes_in_window)
+                spike_times_post_stim_ms = (spikes_in_window - stimTime) * 1000;
+                ExactSpikeTimes{trialIdx, channelIdx} = spike_times_post_stim_ms(:); % Ensure column vector
+            else
+                ExactSpikeTimes{trialIdx, channelIdx} = []; % Empty array for no spikes
+            end
+        end
+    end
+    
+    % -------------------------------------------------------------------------
     % STEP 8.1: FIRING RATE MATRIX METADATA PREPARATION
     % -------------------------------------------------------------------------
     % Create comprehensive metadata structure for the consolidated firing rate matrix
     FiringRateMatrix_info = struct();
-    FiringRateMatrix_info.description = 'Consolidated firing rates (Hz) in post-stimulus window across all patterns';
+    FiringRateMatrix_info.description = 'Consolidated firing rates (Hz) in post-artifact to post-stimulus window across all patterns';
     FiringRateMatrix_info.dimensions = sprintf('[%d trials x %d channels] - All stimulation times from all patterns in chronological order', numTrialsTotal, numChannels);
-    FiringRateMatrix_info.analysis_window_s = psth_window_s;
+    FiringRateMatrix_info.analysis_window_s = [artifact_offset_s(2), psth_window_s(2)];  % Post-artifact to post-stim only
     FiringRateMatrix_info.artifact_window_ms = artifact_window_ms;
     FiringRateMatrix_info.stimulated_channels_excluded = stimulatedChannels;
     FiringRateMatrix_info.allStimTimesConsolidated = allStimTimesConsolidated;  % Column vector of all stim times chronologically
     FiringRateMatrix_info.stimPatternLabels = stimPatternLabels;  % Column vector indicating which pattern each trial belongs to
     FiringRateMatrix_info.numTrialsTotal = numTrialsTotal;
-    FiringRateMatrix_info.note = 'Each row represents one stimulation trial, columns represent recording channels. allStimTimesConsolidated and stimPatternLabels are column vectors with matching indices.';
+    FiringRateMatrix_info.note = 'Each row represents one stimulation trial, columns represent recording channels. Analysis window is POST-ARTIFACT TO POST-STIMULUS ONLY (excludes pre-stim and artifact periods). allStimTimesConsolidated and stimPatternLabels are column vectors with matching indices.';
     
     % -------------------------------------------------------------------------
     % STEP 8.2: LATENCY MATRIX METADATA PREPARATION
     % -------------------------------------------------------------------------
     % Create comprehensive metadata structure for the consolidated latency matrix
     latencyMatrix_info = struct();
-    latencyMatrix_info.description = 'Time-to-first-spike latencies (ms) in post-stimulus window across all patterns';
+    latencyMatrix_info.description = 'Time-to-first-spike latencies (ms) in post-artifact to post-stimulus window across all patterns';
     latencyMatrix_info.dimensions = sprintf('[%d trials x %d channels] - All stimulation times from all patterns in chronological order', numTrialsTotal, numChannels);
-    latencyMatrix_info.search_window_s = latency_search_window_s;
+    latencyMatrix_info.search_window_s = latency_search_window_s;  % Post-artifact to post-stim only
     latencyMatrix_info.artifact_window_ms = artifact_window_ms;
     latencyMatrix_info.stimulated_channels_excluded = stimulatedChannels;
     latencyMatrix_info.allStimTimesConsolidated = allStimTimesConsolidated;  % Column vector of all stim times chronologically
@@ -1023,10 +1074,26 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     latencyMatrix_info.detection_rate_percent = detection_rate;
     latencyMatrix_info.mean_latency_ms = nanmean(latencyMatrix(:));
     latencyMatrix_info.median_latency_ms = nanmedian(latencyMatrix(:));
-    latencyMatrix_info.note = 'Each row represents one stimulation trial, columns represent recording channels. Values are latency in ms to first spike after stimulus (post-artifact window only, guaranteed positive). NaN indicates no spike detected in search window or stimulated channel.';
+    latencyMatrix_info.note = 'Each row represents one stimulation trial, columns represent recording channels. Values are latency in ms to first spike after stimulus (POST-ARTIFACT TO POST-STIMULUS ONLY, excludes pre-stim period). NaN indicates no spike detected in search window or stimulated channel.';
     
     % -------------------------------------------------------------------------
-    % STEP 8.3: CONSOLIDATED DATA EXPORT
+    % STEP 8.3: EXACT SPIKE TIMES METADATA PREPARATION
+    % -------------------------------------------------------------------------
+    % Create comprehensive metadata structure for the exact spike times cell array
+    ExactSpikeTimes_info = struct();
+    ExactSpikeTimes_info.description = 'Exact spike times (ms) post-stimulation for each trial-electrode combination in post-artifact to post-stimulus window';
+    ExactSpikeTimes_info.dimensions = sprintf('[%d trials x %d channels] cell array - All stimulation times from all patterns in chronological order', numTrialsTotal, numChannels);
+    ExactSpikeTimes_info.analysis_window_s = [artifact_offset_s(2), psth_window_s(2)];  % Post-artifact to post-stim only
+    ExactSpikeTimes_info.artifact_window_ms = artifact_window_ms;
+    ExactSpikeTimes_info.stimulated_channels_excluded = stimulatedChannels;
+    ExactSpikeTimes_info.allStimTimesConsolidated = allStimTimesConsolidated;  % Column vector of all stim times chronologically
+    ExactSpikeTimes_info.stimPatternLabels = stimPatternLabels;  % Column vector indicating which pattern each trial belongs to
+    ExactSpikeTimes_info.numTrialsTotal = numTrialsTotal;
+    ExactSpikeTimes_info.time_units = 'milliseconds post-stimulation';
+    ExactSpikeTimes_info.note = 'Each cell {trial, channel} contains column vector of spike times in ms post-stimulation. Analysis window is POST-ARTIFACT TO POST-STIMULUS ONLY (excludes pre-stim and artifact periods). Empty cells [] indicate no spikes detected or stimulated channels.';
+    
+    % -------------------------------------------------------------------------
+    % STEP 8.4: CONSOLIDATED DATA EXPORT
     % -------------------------------------------------------------------------
     % Create output directory and save matrices with metadata for reservoir computing
     consolidatedFolder = fullfile(figFolder, 'Reservoir Computing Metrics');
@@ -1041,6 +1108,14 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % Export latency matrix for 
     latency_filename = fullfile(consolidatedFolder, 'latencyMatrix_consolidated.mat');
     save(latency_filename, 'latencyMatrix', 'latencyMatrix_info');
+    
+    % Export exact spike times cell array
+    spikeTimes_filename = fullfile(consolidatedFolder, 'ExactSpikeTimes_consolidated.mat');
+    save(spikeTimes_filename, 'ExactSpikeTimes', 'ExactSpikeTimes_info');
+    
+    % Export exact spike times matrix
+    exact_spike_times_filename = fullfile(consolidatedFolder, 'ExactSpikeTimes_consolidated.mat');
+    save(exact_spike_times_filename, 'ExactSpikeTimes');
     
     %% ========================================================================
     %% SAVE STIMULATION DATA TO EXPERIMENT MAT FILE
