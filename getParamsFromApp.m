@@ -263,8 +263,9 @@ Params.minSpikeNetworkBurst = app.MinspikepernetworkburstEditField.Value;
 Params.minChannelNetworkBurst = app.MinchannelpernetworkburstEditField.Value;
 Params.bakkumNetworkBurstISInThreshold = app.BakkumNetworkBurstThresholdEditField.Value; % either 'automatic' or a number in seconds
 
-Params.singleChannelBurstDetectionMethod = app.SingleChanenlBurstDetectionDropDown.Value; % supported methods: 'Bakkum'
+Params.singleChannelBurstDetectionMethod = app.SingleChannelBurstDetectionDropDown.Value; % supported methods: 'Bakkum'
 Params.singleChannelBurstMinSpike = app.MinspikeperchannelburstEditField.Value;
+Params.singleChannelIsiThreshold = app.SinglechannelburstthresholdEditField.Value; % either 'automatic' or a number in seconds
 
 %% Dimensionality calculation settings 
 Params.effRankCalMethod = app.effRankCalculationMethodDropDown.Value;
@@ -341,9 +342,11 @@ Params.stimDetectionVal = app.DetectionthresholdmultiplierEditField.Value;
 Params.stimRefractoryPeriod = app.StimrefractoryperiodsEditField.Value;
 Params.stimDuration = app.StimdurationsEditField.Value;
 Params.stimDurationForPlotting = app.StimdurationforplotssEditField.Value;
-Params.preStimWindow = str2num(app.PrestimwindowsEditField.Value);
-Params.postStimWindow = str2num(app.PoststimwindowsEditField.Value);
-Params.stimRemoveSpikesWindow = str2num(app.StimignorespikeswindowsEditField.Value);
+Params.stimAnalysisWindow = str2num(app.StimanalysiswindowsEditField.Value);
+Params.postStimWindowDur = app.PoststimignoredurationmsEditField.Value;
+% Params.preStimWindow = str2num(app.PrestimwindowsEditField.Value);
+% Params.postStimWindow = str2num(app.PoststimwindowsEditField.Value);
+% Params.stimRemoveSpikesWindow = str2num(app.StimignorespikeswindowsEditField.Value);
 Params.stimTimeDiffThreshold = app.PatternmintimedifferencesEditField.Value; % originally 0.1, in seconds
 Params.stimRawDataProcessing = app.StimdataprocessingDropDown.Value;  % none or medianAbs
 Params.stimDecodingTimeWindows = [0, 0.002, 0.004, 0.006, 0.008, 0.01];

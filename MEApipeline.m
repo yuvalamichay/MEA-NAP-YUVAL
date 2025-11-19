@@ -269,7 +269,6 @@ if ((Params.priorAnalysis == 0) || (Params.runSpikeCheckOnPrevSpikeData)) && (Pa
                         Params.outputDataFolderName, ...
                         '1_SpikeDetection', '1A_SpikeDetectedData');
 
-
     
     % Run spike detection
     if detectSpikes == 1
@@ -279,11 +278,14 @@ if ((Params.priorAnalysis == 0) || (Params.runSpikeCheckOnPrevSpikeData)) && (Pa
             batchDetectSpikes(rawData, savePath, option, ExpName, Params);
         end
     end 
-
+    
     % Stimulus detection 
     if Params.stimulationMode == 1
         batchDetectStim(ExpName, Params, app);
+        % Edit spike data based on the stimulation time
+        batchProcessSpikesFromStim(ExpName, Params);
     end 
+
     
     % Specify where ExperimentMatFiles are stored
     experimentMatFileFolder = fullfile(Params.outputDataFolder, ...
@@ -470,12 +472,12 @@ if Params.startAnalysisStep < 3
     end
     oneFigureHandle = checkOneFigureHandle(Params, oneFigureHandle);
 
-    for  ExN = 1:length(ExpName)
+    for ExN = 1:length(ExpName)
         experimentMatFolderPath = fullfile(Params.outputDataFolder, ...
             Params.outputDataFolderName, 'ExperimentMatFiles');
         experimentMatFname = strcat(char(ExpName(ExN)),'_',Params.outputDataFolderName,'.mat'); 
         experimentMatFpath = fullfile(experimentMatFolderPath, experimentMatFname);
-        load(experimentMatFpath,'Info','Params', 'spikeTimes', 'spikeMatrix');
+        load(experimentMatFpath,'Info','Params', 'spikeTimes', 'spikeMatrix', 'Ephys');
         
         idvNeuronalAnalysisGrpFolder = fullfile(Params.outputDataFolder, ...
             Params.outputDataFolderName, '2_NeuronalActivity', ...
@@ -524,12 +526,14 @@ if Params.startAnalysisStep < 3
                         flip(viridis), ...
                         };
 
+            useLogScale = [0, 1, 0, 0, 1];
+
             for metricIdx = 1:length(metricVarsToPlot)
                 metricVarname = metricVarsToPlot{metricIdx};
                 % plot burst heatmap 
                 plotNodeHeatmap(char(Info.FN), Ephys, Info.channels, ...
                     maxValStruct.(metricVarname), Params, coords, metricVarname, metricLabels{metricIdx}, ...
-                    cmapToUse{metricIdx}, idvNeuronalAnalysisFNFolder, figNames{metricIdx}, ...
+                    cmapToUse{metricIdx}, useLogScale(metricIdx), idvNeuronalAnalysisFNFolder, figNames{metricIdx}, ...
                     oneFigureHandle, []);
             
             end
