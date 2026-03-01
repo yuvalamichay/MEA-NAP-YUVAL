@@ -371,6 +371,26 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
 
 % NEW SECTION: YUVAL
 
+    %% Circular-shift shuffle test for post-stimulus AUC significance
+    % Run on all stim times combined
+    shuffleResults = stimShuffleTest(spikeData, allStimTimes, Params, Info);
+
+    % Save the shuffle results struct
+    save(fullfile(figFolder, 'shuffleResults_allStim.mat'), 'shuffleResults');
+
+    % Plot shuffle test summary
+    plotStimShuffleResults(shuffleResults, spikeData, Info, Params, figFolder);
+
+    % Run per stimulus pattern
+    for patternIdx = 1:length(spikeData.stimPatterns)
+        patternShuffleResults = stimShuffleTest(spikeData, ...
+            spikeData.stimPatterns{patternIdx}, Params, Info);
+        save(fullfile(figFolder, sprintf('shuffleResults_pattern_%.f.mat', patternIdx)), ...
+            'patternShuffleResults');
+        plotStimShuffleResults(patternShuffleResults, spikeData, Info, Params, ...
+            figFolder, patternIdx);
+    end
+
  %% ========================================================================
     %% SECTION: INDIVIDUAL ELECTRODE PSTH ANALYSIS
     %% ========================================================================
