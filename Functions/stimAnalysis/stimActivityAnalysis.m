@@ -537,11 +537,12 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             if use_ssvkernel
                 [response, resp_metrics] = calculate_psth_metrics(...
                     all_spike_times_s, stimTimes, psth_window_s, psth_bin_width_s, ...
-                    'smoothing_method', 'ssvkernel');
+                    'smoothing_method', 'ssvkernel', 'auc_start_s', 0);
             else
                 [response, resp_metrics] = calculate_psth_metrics(...
                     all_spike_times_s, stimTimes, psth_window_s, psth_bin_width_s, ...
-                    'smoothing_method', 'gaussian', 'gaussian_width_ms', psth_gaussian_width_ms);
+                    'smoothing_method', 'gaussian', 'gaussian_width_ms', psth_gaussian_width_ms, ...
+                    'auc_start_s', 0);
             end
 
             if isempty(response.psth_samples)
@@ -650,6 +651,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             % Compute baseline-corrected metrics and statistical significance measures
 
             % Baseline correction: subtract mean baseline AUC from response AUC
+            % Note: resp_metrics.auc is now post-stim only (t=0 to window end)
             mean_baseline_auc = mean(baseline_aucs);
             auc_corrected = resp_metrics.auc - mean_baseline_auc;
             mean_baseline_psth = mean(all_baseline_psth_smooth, 1);
@@ -726,7 +728,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             electrodeLevelResponse_pattern_x(valid_channel_count).channel_id = channel_id;
             electrodeLevelResponse_pattern_x(valid_channel_count).file_index = channelIdx;
             electrodeLevelResponse_pattern_x(valid_channel_count).pattern_id = patternIdx;
-            electrodeLevelResponse_pattern_x(valid_channel_count).auc_response = resp_metrics.auc;
+            electrodeLevelResponse_pattern_x(valid_channel_count).auc_poststim = resp_metrics.auc;
             electrodeLevelResponse_pattern_x(valid_channel_count).auc_baseline_mean = mean_baseline_auc;
             electrodeLevelResponse_pattern_x(valid_channel_count).auc_corrected = auc_corrected;
             electrodeLevelResponse_pattern_x(valid_channel_count).peak_firing_rate_hz = resp_metrics.peak_firing_rate;
