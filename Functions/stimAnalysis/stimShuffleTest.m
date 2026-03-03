@@ -104,8 +104,19 @@ numBins = length(rasterBins) - 1;
 
 %% 1. Compute observed AUC
 spikeMethod = Params.SpikesMethod;
+
+% Pre-compute validity mask: check isfield/isempty ONCE, outside parfor
+validChannel = false(numChannels, 1);
+for chIdx = 1:numChannels
+    if isfield(spikeData.spikeTimes{chIdx}, spikeMethod) && ...
+       ~isempty(spikeData.spikeTimes{chIdx}.(spikeMethod))
+        validChannel(chIdx) = true;
+    end
+end
+
 AUC_obs = computePostStimAUC(spikeData.spikeTimes, allStimTimes, ...
-    rasterBins, binWidth, numChannels, numStimEvents, numBins, spikeMethod);
+    rasterBins, binWidth, numChannels, numStimEvents, numBins, spikeMethod, ...
+    validChannel);
 
 %% 2. Build null distribution via circular shift
 AUC_null = zeros(numChannels, Nshuffles);
@@ -120,13 +131,10 @@ if parallelToolboxInstalled
         % Create shifted copy of spike times
         shuffledSpikeTimes = spikeData.spikeTimes;  %#ok<PFBNS>
         for chIdx = 1:numChannels
-            if ~isfield(shuffledSpikeTimes{chIdx}, spikeMethod) %#ok<PFBNS>
+            if ~validChannel(chIdx)  %#ok<PFBNS>
                 continue
             end
-            chSpikes = shuffledSpikeTimes{chIdx}.(spikeMethod);
-            if isempty(chSpikes)
-                continue
-            end
+            chSpikes = shuffledSpikeTimes{chIdx}.(spikeMethod);  %#ok<PFBNS>
             % Random circular shift: uniform in (0, duration_s), guaranteed non-zero
             delta = rand() * (duration_s - 1e-6) + 1e-6;  %#ok<PFBNS>
             shiftedSpikes = chSpikes + delta;
@@ -138,19 +146,16 @@ if parallelToolboxInstalled
         end
         AUC_null(:, shuffleIdx) = computePostStimAUC(shuffledSpikeTimes, ...
             allStimTimes, rasterBins, binWidth, numChannels, numStimEvents, ...
-            numBins, spikeMethod);  %#ok<PFBNS>
+            numBins, spikeMethod, validChannel);  %#ok<PFBNS>
     end
 else
     for shuffleIdx = 1:Nshuffles
         shuffledSpikeTimes = spikeData.spikeTimes;
         for chIdx = 1:numChannels
-            if ~isfield(shuffledSpikeTimes{chIdx}, spikeMethod)
+            if ~validChannel(chIdx)
                 continue
             end
             chSpikes = shuffledSpikeTimes{chIdx}.(spikeMethod);
-            if isempty(chSpikes)
-                continue
-            end
             delta = rand() * (duration_s - 1e-6) + 1e-6;
             shiftedSpikes = chSpikes + delta;
             shiftedSpikes(shiftedSpikes > duration_s) = ...
@@ -160,7 +165,7 @@ else
         end
         AUC_null(:, shuffleIdx) = computePostStimAUC(shuffledSpikeTimes, ...
             allStimTimes, rasterBins, binWidth, numChannels, numStimEvents, ...
-            numBins, spikeMethod);
+            numBins, spikeMethod, validChannel);
     end
 end
 
@@ -195,7 +200,8 @@ end
 %  Local function: compute per-electrode AUC from spike times
 %  ========================================================================
 function aucVec = computePostStimAUC(spikeTimes_cell, allStimTimes, ...
-    rasterBins, binWidth, numChannels, numStimEvents, numBins, spikeMethod)
+    rasterBins, binWidth, numChannels, numStimEvents, numBins, spikeMethod, ...
+    validChannel)
 % Computes the area under the mean PSTH curve for each electrode.
 %
 % For each electrode, the firing rate is binned around each stimulus event,
@@ -205,13 +211,10 @@ function aucVec = computePostStimAUC(spikeTimes_cell, allStimTimes, ...
     binCentres = rasterBins(1:end-1) + binWidth / 2;
 
     for chIdx = 1:numChannels
-        if ~isfield(spikeTimes_cell{chIdx}, spikeMethod)
+        if ~validChannel(chIdx)
             continue  % AUC stays 0
         end
         chSpikes = spikeTimes_cell{chIdx}.(spikeMethod);
-        if isempty(chSpikes)
-            continue  % AUC stays 0
-        end
         % Firing rate aligned to each stim event: (numStimEvents x numBins)
         frMat = zeros(numStimEvents, numBins);
         for evIdx = 1:numStimEvents
