@@ -56,7 +56,6 @@ function shuffleResults = stimShuffleTest(spikeData, allStimTimes, Params, Info)
 % 2. For each shuffle iteration:
 %      a. For each electrode, circularly shift its spike train by a random
 %         offset uniformly drawn from (0, recordingDuration) with wrap-around.
-%         The shift is guaranteed to be non-zero.
 %      b. Recompute the post-stimulus PSTH and AUC for every electrode
 %         using the shifted spike times aligned to the *original* stim times.
 % 3. For each electrode, determine the 2.5th and 97.5th percentiles of its
@@ -104,19 +103,8 @@ numBins = length(rasterBins) - 1;
 
 %% 1. Compute observed AUC
 spikeMethod = Params.SpikesMethod;
-
-% Pre-compute validity mask: check isfield/isempty ONCE, outside parfor
-validChannel = false(numChannels, 1);
-for chIdx = 1:numChannels
-    if isfield(spikeData.spikeTimes{chIdx}, spikeMethod) && ...
-       ~isempty(spikeData.spikeTimes{chIdx}.(spikeMethod))
-        validChannel(chIdx) = true;
-    end
-end
-
 AUC_obs = computePostStimAUC(spikeData.spikeTimes, allStimTimes, ...
-    rasterBins, binWidth, numChannels, numStimEvents, numBins, spikeMethod, ...
-    validChannel);
+    rasterBins, binWidth, numChannels, numStimEvents, numBins, spikeMethod);
 
 %% 2. Build null distribution via circular shift
 AUC_null = zeros(numChannels, Nshuffles);
@@ -131,41 +119,31 @@ if parallelToolboxInstalled
         % Create shifted copy of spike times
         shuffledSpikeTimes = spikeData.spikeTimes;  %#ok<PFBNS>
         for chIdx = 1:numChannels
-            if ~validChannel(chIdx)  %#ok<PFBNS>
-                continue
-            end
             chSpikes = shuffledSpikeTimes{chIdx}.(spikeMethod);  %#ok<PFBNS>
-            % Random circular shift: uniform in (0, duration_s), guaranteed non-zero
-            delta = rand() * (duration_s - 1e-6) + 1e-6;  %#ok<PFBNS>
+            % Random circular shift: uniform in (0, duration_s)
+            delta = rand() * duration_s;  %#ok<PFBNS>
             shiftedSpikes = chSpikes + delta;
             % Wrap around
-            shiftedSpikes(shiftedSpikes > duration_s) = ...
-                shiftedSpikes(shiftedSpikes > duration_s) - duration_s;
+            shiftedSpikes(shiftedSpikes > duration_s) = shiftedSpikes(shiftedSpikes > duration_s) - duration_s;
             shiftedSpikes = sort(shiftedSpikes);
             shuffledSpikeTimes{chIdx}.(spikeMethod) = shiftedSpikes;
         end
         AUC_null(:, shuffleIdx) = computePostStimAUC(shuffledSpikeTimes, ...
-            allStimTimes, rasterBins, binWidth, numChannels, numStimEvents, ...
-            numBins, spikeMethod, validChannel);  %#ok<PFBNS>
+            allStimTimes, rasterBins, binWidth, numChannels, numStimEvents, numBins, spikeMethod);  %#ok<PFBNS>
     end
 else
     for shuffleIdx = 1:Nshuffles
         shuffledSpikeTimes = spikeData.spikeTimes;
         for chIdx = 1:numChannels
-            if ~validChannel(chIdx)
-                continue
-            end
             chSpikes = shuffledSpikeTimes{chIdx}.(spikeMethod);
-            delta = rand() * (duration_s - 1e-6) + 1e-6;
+            delta = rand() * duration_s;
             shiftedSpikes = chSpikes + delta;
-            shiftedSpikes(shiftedSpikes > duration_s) = ...
-                shiftedSpikes(shiftedSpikes > duration_s) - duration_s;
+            shiftedSpikes(shiftedSpikes > duration_s) = shiftedSpikes(shiftedSpikes > duration_s) - duration_s;
             shiftedSpikes = sort(shiftedSpikes);
             shuffledSpikeTimes{chIdx}.(spikeMethod) = shiftedSpikes;
         end
         AUC_null(:, shuffleIdx) = computePostStimAUC(shuffledSpikeTimes, ...
-            allStimTimes, rasterBins, binWidth, numChannels, numStimEvents, ...
-            numBins, spikeMethod, validChannel);
+            allStimTimes, rasterBins, binWidth, numChannels, numStimEvents, numBins, spikeMethod);
     end
 end
 
@@ -200,8 +178,7 @@ end
 %  Local function: compute per-electrode AUC from spike times
 %  ========================================================================
 function aucVec = computePostStimAUC(spikeTimes_cell, allStimTimes, ...
-    rasterBins, binWidth, numChannels, numStimEvents, numBins, spikeMethod, ...
-    validChannel)
+    rasterBins, binWidth, numChannels, numStimEvents, numBins, spikeMethod)
 % Computes the area under the mean PSTH curve for each electrode.
 %
 % For each electrode, the firing rate is binned around each stimulus event,
@@ -211,15 +188,11 @@ function aucVec = computePostStimAUC(spikeTimes_cell, allStimTimes, ...
     binCentres = rasterBins(1:end-1) + binWidth / 2;
 
     for chIdx = 1:numChannels
-        if ~validChannel(chIdx)
-            continue  % AUC stays 0
-        end
         chSpikes = spikeTimes_cell{chIdx}.(spikeMethod);
         % Firing rate aligned to each stim event: (numStimEvents x numBins)
         frMat = zeros(numStimEvents, numBins);
         for evIdx = 1:numStimEvents
-            frMat(evIdx, :) = histcounts(chSpikes - allStimTimes(evIdx), ...
-                rasterBins) / binWidth;
+            frMat(evIdx, :) = histcounts(chSpikes - allStimTimes(evIdx), rasterBins) / binWidth;
         end
         meanFR = mean(frMat, 1);  % average across trials
         aucVec(chIdx) = trapz(binCentres, meanFR);
