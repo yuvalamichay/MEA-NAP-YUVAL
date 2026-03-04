@@ -282,6 +282,9 @@ for recording = 1:numel(files)
                     wname = char(wnameList{wname});
                     valid_wname = strrep(wname, '.', 'p');
                     actual_wname = strrep(wname, 'p', '.');
+                    if contains(wname, '-')
+                        valid_wname = strrep(wname, '-', '_');
+                    end
                     
                     spikeWaves = [];
                     spikeFrames = [];
