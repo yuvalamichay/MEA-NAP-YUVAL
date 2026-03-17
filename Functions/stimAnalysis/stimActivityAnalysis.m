@@ -971,20 +971,41 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     % Export consolidated matrices and metadata for downstream RC analysis
 
     % -------------------------------------------------------------------------
-    % STEP 8.0: EXACT SPIKE TIMES MATRIX COMPUTATION
+    % STEP 8.0: EXACT SPIKE TIMES AND AMPLITUDES MATRIX COMPUTATION
     % -------------------------------------------------------------------------
-    % Create cell array containing exact spike times for each trial-electrode combination
+    % Create cell arrays containing exact spike times and amplitudes for each trial-electrode combination
     % Dimensions: [numTrialsTotal x numChannels] cell array
     % Each cell contains column vector of spike times in ms post-stimulation
     ExactSpikeTimes = cell(numTrialsTotal, numChannels);
+    
+    % Create cell array containing exact spike amplitudes for each trial-electrode combination
+    % Dimensions: [numTrialsTotal x numChannels] cell array  
+    % Each cell contains column vector of spike amplitudes (absolute values in µV)
+    ExactSpikeAmplitudes = cell(numTrialsTotal, numChannels);
 
     % Define analysis window for spike time extraction (same as firing rate analysis)
     spike_extraction_window_s = psth_window_s;
 
+    % Ensure spike amplitudes are available (compute if not already done)
+    if ~isfield(spikeData, 'spikeAmps') || isempty(spikeData.spikeAmps)
+        if ~(strcmp(Params.SpikesMethod,'merged') || strcmp(Params.SpikesMethod,'mergedAll'))
+            spikeAmps = getSpikeAmp(spikeData.spikeWaveforms);
+            spikeData.spikeAmps = spikeAmps;
+        else
+            % For merged spike methods, we cannot compute amplitudes from waveforms
+            % Initialize empty amplitude data structure
+            spikeData.spikeAmps = cell(1, numChannels);
+            for channelIdx = 1:numChannels
+                spikeData.spikeAmps{channelIdx} = struct();
+                spikeData.spikeAmps{channelIdx}.(Params.SpikesMethod) = [];
+            end
+        end
+    end
+
     for channelIdx = 1:numChannels
         % Skip stimulated channels (leave cells empty)
         if ismember(channelIdx, stimulatedChannels)
-            continue; % ExactSpikeTimes already initialized as empty cells for these channels
+            continue; % ExactSpikeTimes and ExactSpikeAmplitudes already initialized as empty cells for these channels
         end
 
         % Validate spike data availability for current channel
@@ -998,6 +1019,15 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         if isempty(all_spike_times_s)
             continue;  % Skip channels with no detected spikes
         end
+        
+        % Get spike amplitudes for this channel (if available)
+        all_spike_amplitudes = [];
+        if isfield(spikeData, 'spikeAmps') && ...
+           channelIdx <= length(spikeData.spikeAmps) && ...
+           ~isempty(spikeData.spikeAmps{channelIdx}) && ...
+           isfield(spikeData.spikeAmps{channelIdx}, Params.SpikesMethod)
+            all_spike_amplitudes = spikeData.spikeAmps{channelIdx}.(Params.SpikesMethod);
+        end
 
         % Process each stimulus trial across all patterns
         for trialIdx = 1:numTrialsTotal
@@ -1008,15 +1038,28 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             trial_window_end = stimTime + psth_window_s(2);        % End of post-stim window
 
             % Find spikes in post-artifact to post-stimulus window only
-            spikes_in_window = all_spike_times_s(...
+            spike_indices_in_window = find(...
                 all_spike_times_s >= trial_window_start & all_spike_times_s <= trial_window_end);
-
-            % Convert to milliseconds post-stimulation and store as column vector
-            if ~isempty(spikes_in_window)
+            
+            % Extract spike times and convert to milliseconds post-stimulation
+            if ~isempty(spike_indices_in_window)
+                spikes_in_window = all_spike_times_s(spike_indices_in_window);
                 spike_times_post_stim_ms = (spikes_in_window - stimTime) * 1000;
                 ExactSpikeTimes{trialIdx, channelIdx} = spike_times_post_stim_ms(:); % Ensure column vector
+                
+                % Extract corresponding spike amplitudes (if available)
+                if ~isempty(all_spike_amplitudes) && length(all_spike_amplitudes) >= max(spike_indices_in_window)
+                    spike_amplitudes_in_window = all_spike_amplitudes(spike_indices_in_window);
+                    % Store absolute values of amplitudes (convert negative peaks to positive values)
+                    ExactSpikeAmplitudes{trialIdx, channelIdx} = abs(spike_amplitudes_in_window(:)); % Ensure column vector
+                else
+                    % If amplitudes not available, store empty array
+                    ExactSpikeAmplitudes{trialIdx, channelIdx} = []; 
+                end
             else
+                % No spikes found in window
                 ExactSpikeTimes{trialIdx, channelIdx} = []; % Empty array for no spikes
+                ExactSpikeAmplitudes{trialIdx, channelIdx} = []; % Empty array for no spikes
             end
         end
     end
@@ -1068,7 +1111,24 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     ExactSpikeTimes_info.note = 'Each cell {trial, channel} contains column vector of spike times in ms post-stimulation. Analysis window is POST-ARTIFACT TO POST-STIMULUS ONLY (excludes pre-stim and artifact periods). Empty cells [] indicate no spikes detected or stimulated channels.';
 
     % -------------------------------------------------------------------------
-    % STEP 8.4: CONSOLIDATED DATA EXPORT
+    % STEP 8.4: EXACT SPIKE AMPLITUDES METADATA PREPARATION
+    % -------------------------------------------------------------------------
+    % Create comprehensive metadata structure for the exact spike amplitudes cell array
+    ExactSpikeAmplitudes_info = struct();
+    ExactSpikeAmplitudes_info.description = 'Exact spike amplitudes (µV) for each trial-electrode combination in post-artifact to post-stimulus window';
+    ExactSpikeAmplitudes_info.dimensions = sprintf('[%d trials x %d channels] cell array - All stimulation times from all patterns in chronological order', numTrialsTotal, numChannels);
+    ExactSpikeAmplitudes_info.analysis_window_s = [artifact_duration_s, psth_window_s(2)];  % Post-artifact to post-stim only
+    ExactSpikeAmplitudes_info.stimulated_channels_excluded = stimulatedChannels;
+    ExactSpikeAmplitudes_info.allStimTimesConsolidated = allStimTimesConsolidated;  % Column vector of all stim times chronologically
+    ExactSpikeAmplitudes_info.stimPatternLabels = stimPatternLabels;  % Column vector indicating which pattern each trial belongs to
+    ExactSpikeAmplitudes_info.numTrialsTotal = numTrialsTotal;
+    ExactSpikeAmplitudes_info.amplitude_units = 'microvolts (µV) - absolute values';
+    ExactSpikeAmplitudes_info.amplitude_calculation = 'Absolute values of minimum waveform amplitudes from getSpikeAmp()';
+    ExactSpikeAmplitudes_info.note = 'Each cell {trial, channel} contains column vector of spike amplitudes in µV (absolute values). Corresponds 1:1 with ExactSpikeTimes. Analysis window is POST-ARTIFACT TO POST-STIMULUS ONLY. Empty cells [] indicate no spikes detected, stimulated channels, or unavailable amplitude data.';
+    ExactSpikeAmplitudes_info.compatibility_note = 'For merged spike methods, amplitude data may not be available and cells will be empty.';
+
+    % -------------------------------------------------------------------------
+    % STEP 8.5: CONSOLIDATED DATA EXPORT
     % -------------------------------------------------------------------------
     % Create output directory and save matrices with metadata for reservoir computing
     consolidatedFolder = fullfile(figFolder, 'Reservoir Computing Metrics');
@@ -1088,9 +1148,14 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     spikeTimes_filename = fullfile(consolidatedFolder, 'ExactSpikeTimes_consolidated.mat');
     save(spikeTimes_filename, 'ExactSpikeTimes', 'ExactSpikeTimes_info');
 
-    % Export exact spike times matrix
-    exact_spike_times_filename = fullfile(consolidatedFolder, 'ExactSpikeTimes_consolidated.mat');
-    save(exact_spike_times_filename, 'ExactSpikeTimes');
+    % Export exact spike amplitudes cell array
+    spikeAmplitudes_filename = fullfile(consolidatedFolder, 'ExactSpikeAmplitudes_consolidated.mat');
+    save(spikeAmplitudes_filename, 'ExactSpikeAmplitudes', 'ExactSpikeAmplitudes_info');
+
+    % Export combined spike times and amplitudes in single file for convenience
+    combined_filename = fullfile(consolidatedFolder, 'ExactSpikesTimesAndAmplitudes_consolidated.mat');
+    save(combined_filename, 'ExactSpikeTimes', 'ExactSpikeTimes_info', ...
+         'ExactSpikeAmplitudes', 'ExactSpikeAmplitudes_info');
 
     %% ========================================================================
     %% SAVE STIMULATION DATA TO EXPERIMENT MAT FILE
