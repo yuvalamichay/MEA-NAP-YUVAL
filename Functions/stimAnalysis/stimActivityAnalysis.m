@@ -758,26 +758,20 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
         % =====================================================================
         % STEP 6: CHANNEL SELECTION AND VISUALIZATION
         % =====================================================================
-        % Select top-responding channels (corrected AUC > 0.5)  for plotting.
+        % Plot all analyzed channels (no AUC threshold or top-5 restriction).
         if ~isempty(temp_data)
-            % Extract corrected AUC values for channel ranking
-            auc_values = [electrodeLevelResponse_pattern_x.auc_corrected];
-
-            % Identify channels with significant responses (corrected AUC > 0.5)
-            high_auc_indices = find(auc_values > 0.5);
-
-            % Rank channels by response strength and select top 5 for visualization
-            [~, sort_indices] = sort(auc_values(high_auc_indices), 'descend');
-            top_channels_for_plotting = high_auc_indices(sort_indices(1:min(5, length(sort_indices))));
+            % Determine how many channels were analyzed for this pattern
+            num_channels_for_plotting = numel(temp_data);
+            channels_for_plotting = 1:num_channels_for_plotting;
 
             % ---------------------------------------------------------------
-            % STEP 6.1: GENERATE PSTH PLOTS FOR TOP CHANNELS
+            % STEP 6.1: GENERATE PSTH PLOTS FOR ALL CHANNELS
             % ---------------------------------------------------------------
             % Create detailed PSTH plots with raster plots and statistical annotations
-            % for the most responsive channels in the current pattern
+            % for every analyzed channel in the current pattern
 
-            for plot_idx = 1:length(top_channels_for_plotting)
-                channel_data_idx = top_channels_for_plotting(plot_idx);
+            for plot_idx = 1:length(channels_for_plotting)
+                channel_data_idx = channels_for_plotting(plot_idx);
                 data = temp_data{channel_data_idx};
 
                 % Create figure 
