@@ -29,25 +29,25 @@ else
     titleSuffix = sprintf('pattern %.f', patternIdx);
 end
 
-numChannels = length(shuffleResults.AUC_obs);
-AUC_obs     = shuffleResults.AUC_obs;
+numChannels = length(shuffleResults.peakZscore_obs);
+peakZscore_obs = shuffleResults.peakZscore_obs;
 pctile_lo   = shuffleResults.pctile_lo;
 pctile_hi   = shuffleResults.pctile_hi;
 isSignificant = shuffleResults.isSignificant;
 xVec = 1:numChannels;
 
-%% Figure 1: Null distribution heatmap with observed AUC overlay
+%% Figure 1: Null distribution heatmap with observed peak z-score overlay
 fig1 = figure('Position', [100, 100, 800, 500], 'Color', 'w', 'Visible', 'off');
 
 % Sort null distributions for each electrode for visualisation
-AUC_null_sorted = sort(shuffleResults.AUC_null, 2);
+peakZscore_null_sorted = sort(shuffleResults.peakZscore_null, 2);
 
 subplot(2, 1, 1)
-imagesc(1:shuffleResults.Nshuffles, 1:numChannels, AUC_null_sorted)
+imagesc(1:shuffleResults.Nshuffles, 1:numChannels, peakZscore_null_sorted)
 colorbar
 ylabel('Channel Index')
 xlabel('Shuffle (sorted)')
-title(sprintf('Null AUC distribution – %s  |  %s', titleSuffix, char(Info.FN{1})), ...
+title(sprintf('Null peak z-score distribution – %s  |  %s', titleSuffix, char(Info.FN{1})), ...
     'Interpreter', 'none')
 set(gca, 'TickDir', 'out')
 box off
@@ -55,17 +55,17 @@ box off
 subplot(2, 1, 2)
 hold on
 % Plot null median +/- CI per electrode
-nullMedian = median(shuffleResults.AUC_null, 2);
+nullMedian = median(shuffleResults.peakZscore_null, 2);
 errorbar(xVec, nullMedian, nullMedian - pctile_lo, pctile_hi - nullMedian, ...
     '.', 'Color', [0.6, 0.6, 0.6], 'LineWidth', 1, 'DisplayName', 'Null median \pm CI');
 % Overlay observed
-scatter(xVec(~isSignificant), AUC_obs(~isSignificant), 25, ...
+scatter(xVec(~isSignificant), peakZscore_obs(~isSignificant), 25, ...
     [0.3, 0.3, 0.7], 'filled', 'DisplayName', 'Not significant');
-scatter(xVec(isSignificant), AUC_obs(isSignificant), 40, ...
+scatter(xVec(isSignificant), peakZscore_obs(isSignificant), 40, ...
     [0.9, 0.2, 0.2], 'filled', 'DisplayName', 'Significant');
 hold off
 xlabel('Channel Index')
-ylabel('AUC')
+ylabel('Peak Z-score')
 legend('Location', 'best')
 title(sprintf('Observed vs null – %s', titleSuffix))
 box off

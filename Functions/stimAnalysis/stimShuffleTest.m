@@ -83,7 +83,6 @@ end
 
 %% Setup
 numChannels = length(spikeData.stimInfo);
-numStimEvents = length(allStimTimes);
 duration_s = Info.duration_s;
 
 % Analysis windows (matching stimActivityAnalysis.m)
@@ -92,14 +91,13 @@ poststim_duration_s = psth_window_s(2) - 0;  % Duration from stimulus to end of 
 baseline_window_s = [-poststim_duration_s, 0];  % Baseline window for d-prime calculation (same duration as post-stim)
 
 % PSTH parameters (matching stimActivityAnalysis.m)
-psth_bin_width_s = 0.001;  % Bin width for PSTH computation (not used directly by calculate_psth_metrics)
-psth_gaussian_width_ms = 2;  % Gaussian kernel width (matching calculate_psth_metrics default)
+psth_gaussian_width_ms = 1;  % Gaussian kernel width (matching stimActivityAnalysis.m line 416)
 
 %% 1. Compute observed peak z-score
 spikeMethod = Params.SpikesMethod;
 peakZscore_obs = computePeakZscoreForEachChannel(spikeData.spikeTimes, allStimTimes, ...
-    psth_window_s, baseline_window_s, psth_bin_width_s, psth_gaussian_width_ms, ...
-    numChannels, numStimEvents, spikeMethod);
+    psth_window_s, baseline_window_s, psth_gaussian_width_ms, ...
+    numChannels, spikeMethod);
 
 %% 2. Build null distribution via circular shift
 peakZscore_null = zeros(numChannels, Nshuffles);
@@ -124,8 +122,8 @@ if parallelToolboxInstalled
             shuffledSpikeTimes{chIdx}.(spikeMethod) = shiftedSpikes;
         end
         peakZscore_null(:, shuffleIdx) = computePeakZscoreForEachChannel(shuffledSpikeTimes, ...
-            allStimTimes, psth_window_s, baseline_window_s, psth_bin_width_s, psth_gaussian_width_ms, ...
-            numChannels, numStimEvents, spikeMethod);  %#ok<PFBNS>
+            allStimTimes, psth_window_s, baseline_window_s, psth_gaussian_width_ms, ...
+            numChannels, spikeMethod);  %#ok<PFBNS>
     end
 else
     for shuffleIdx = 1:Nshuffles
@@ -139,8 +137,8 @@ else
             shuffledSpikeTimes{chIdx}.(spikeMethod) = shiftedSpikes;
         end
         peakZscore_null(:, shuffleIdx) = computePeakZscoreForEachChannel(shuffledSpikeTimes, ...
-            allStimTimes, psth_window_s, baseline_window_s, psth_bin_width_s, psth_gaussian_width_ms, ...
-            numChannels, numStimEvents, spikeMethod);
+            allStimTimes, psth_window_s, baseline_window_s, psth_gaussian_width_ms, ...
+            numChannels, spikeMethod);
     end
 end
 

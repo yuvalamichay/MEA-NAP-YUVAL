@@ -1,4 +1,4 @@
-function peakZscore = computePeakZscore(all_spike_times_s, allStimTimes, psth_window_s, baseline_window_s, psth_gaussian_width_ms, spikeMethod)
+function peakZscore = computePeakZscore(all_spike_times_s, allStimTimes, psth_window_s, baseline_window_s, psth_gaussian_width_ms)
 % COMPUTEPEAKZSCORE Computes the peak z-score from a smoothed PSTH.
 %
 % For a single electrode, this function:
@@ -21,8 +21,6 @@ function peakZscore = computePeakZscore(all_spike_times_s, allStimTimes, psth_wi
 %     Window for baseline firing rate calculation [start, end] in seconds.
 % psth_gaussian_width_ms : double
 %     Width of the Gaussian smoothing kernel in milliseconds.
-% spikeMethod : string
-%     (Not directly used, but kept for interface consistency).
 %
 % OUTPUTS
 % -------
@@ -51,7 +49,7 @@ function peakZscore = computePeakZscore(all_spike_times_s, allStimTimes, psth_wi
 
     % Calculate baseline statistics from trial-by-trial firing rates (matches stimActivityAnalysis.m)
     baseline_firing_rates = zeros(1, numStimEvents);
-    effective_window_duration = baseline_window_s(2) - baseline_window_s(1);
+    effective_window_duration = psth_window_s(2) - psth_window_s(1);  % Total analysis window (matches stimActivityAnalysis.m line 483)
     
     for stimIdx = 1:numStimEvents
         stimTime = allStimTimes(stimIdx);
@@ -78,7 +76,7 @@ function peakZscore = computePeakZscore(all_spike_times_s, allStimTimes, psth_wi
     zscore_psth = (resp_metrics.psth_smooth - baseline_mean_hz) ./ baseline_std_hz;
     
     % Find peak z-score in the post-stimulus period
-    post_stim_mask = resp_metrics.time_s >= 0;
+    post_stim_mask = resp_metrics.time_vector_s >= 0;
     if any(post_stim_mask)
         peakZscore = max(zscore_psth(post_stim_mask));
     else
