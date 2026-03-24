@@ -370,7 +370,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
     close(oneFigureHandle);  % Close the figure after saving
 
     %% ========================================================================
-    %% CIRCULAR-SHIFT SHUFFLE TEST FOR POST-STIMULUS AUC SIGNIFICANCE
+    %% CIRCULAR-SHIFT SHUFFLE TEST FOR POST-STIMULUS TRIAL PROPORTION SIGNIFICANCE
     %% ========================================================================
     % Run per stimulus pattern and save results + figures
     for patternIdx = 1:length(spikeData.stimPatterns)
@@ -615,8 +615,8 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                     all_spike_times_s >= baseline_start & all_spike_times_s < baseline_end);
                 baseline_firing_rates_all_trials(stimIdx) = length(baseline_spikes) / effective_window_duration;
 
-                % Post-stimulus period firing rate  
-                poststim_start = stimTime + psth_window_s(1);
+                % Post-stimulus period firing rate (post-stim only, t >= 0)
+                poststim_start = stimTime;
                 poststim_end = stimTime + psth_window_s(2);
 
                 poststim_spikes = all_spike_times_s(...
@@ -788,8 +788,11 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 zscore_psth = (data.resp_metrics.psth_smooth - baseline_mean_hz_dprime) ./ baseline_std_hz_safe;
                 zscore_baseline_psth = (data.mean_baseline_psth - baseline_mean_hz_dprime) ./ baseline_std_hz_safe;
 
-                % Identify peak and half-maximum points in z-score space
-                [zscore_peak_val, zscore_peak_idx] = max(zscore_psth);
+                % Identify peak and half-maximum points in z-score space (post-stim only)
+                post_stim_mask = data.resp_metrics.time_vector_s >= 0;
+                zscore_psth_post = zscore_psth;
+                zscore_psth_post(~post_stim_mask) = -Inf;
+                [zscore_peak_val, zscore_peak_idx] = max(zscore_psth_post);
                 zscore_peak_time_ms = data.resp_metrics.time_vector_s(zscore_peak_idx) * 1000;
 
                 % Calculate half-maximum decay time
