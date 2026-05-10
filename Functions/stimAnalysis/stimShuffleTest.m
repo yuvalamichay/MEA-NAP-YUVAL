@@ -5,8 +5,8 @@ function shuffleResults = stimShuffleTest(spikeData, allStimTimes, Params, Info)
 % shifting each electrode's spike times by a random offset (with
 % wrap-around within the recording duration), then recomputing the
 % smoothed PSTH and its peak z-score relative to baseline.  Significance is
-% assessed per electrode with a two-tailed test (p < 0.05) using the
-% empirical 2.5th and 97.5th percentiles of the null distribution.
+% assessed per electrode with a one-tailed (upper) test (p < 0.05) using the
+% empirical 95th percentile of the null distribution.
 % No multiple-comparison correction is applied.
 %
 % INPUTS
@@ -27,7 +27,7 @@ function shuffleResults = stimShuffleTest(spikeData, allStimTimes, Params, Info)
 %     Optional:
 %       .Nshuffles             - number of circular-shift shuffles.
 %                                Default: 500
-%       .shuffleAlpha          - significance level for the two-tailed test.
+%       .shuffleAlpha          - significance level for the one-tailed (upper) test.
 %                                Default: 0.05
 % Info : struct
 %     Must contain:
@@ -38,11 +38,8 @@ function shuffleResults = stimShuffleTest(spikeData, allStimTimes, Params, Info)
 % shuffleResults : struct with the following fields
 %   .peakZscore_obs    - [numChannels x 1] observed peak z-score for each electrode
 %   .peakZscore_null   - [numChannels x Nshuffles] null peak z-score distributions
-%   .pctile_lo         - [numChannels x 1] lower percentile bound (2.5th)
-%   .pctile_hi         - [numChannels x 1] upper percentile bound (97.5th)
-%   .isSigLo           - [numChannels x 1] logical, true if peakZscore_obs < pctile_lo
-%   .isSigHi           - [numChannels x 1] logical, true if peakZscore_obs > pctile_hi
-%   .isSignificant     - [numChannels x 1] logical, true if significant (either tail)
+%   .pctile_thresh     - [numChannels x 1] upper percentile threshold (95th)
+%   .isSignificant     - [numChannels x 1] logical, true if peakZscore_obs > pctile_thresh
 %   .Nshuffles         - scalar, number of shuffles performed
 %   .alpha             - scalar, significance level used
 %   .postStimWindow    - [1 x 2] the post-stimulus window used for peak detection
@@ -55,10 +52,10 @@ function shuffleResults = stimShuffleTest(spikeData, allStimTimes, Params, Info)
 %         offset uniformly drawn from (0, recordingDuration) with wrap-around.
 %      b. Recompute the smoothed PSTH and peak z-score for every electrode
 %         using the shifted spike times aligned to the *original* stim times.
-% 3. For each electrode, determine the 2.5th and 97.5th percentiles of its
-%    null peak z-score distribution.
-% 4. Mark an electrode as significant if observed peak z-score falls outside the
-%    null percentile interval.
+% 3. For each electrode, determine the 95th percentile of its null peak
+%    z-score distribution.
+% 4. Mark an electrode as significant if observed peak z-score exceeds the
+%    null 95th percentile threshold (one-tailed, upper).
 %
 % REFERENCE
 % ---------
@@ -142,24 +139,17 @@ else
     end
 end
 
-%% 3. Determine significance per electrode (two-tailed)
-lo_pctile = (alpha / 2) * 100;          % 2.5
-hi_pctile = (1 - alpha / 2) * 100;      % 97.5
+%% 3. Determine significance per electrode (one-tailed, upper)
+thresh_pctile = (1 - alpha) * 100;      % 95
 
-pctile_lo = prctile(peakZscore_null, lo_pctile, 2);  % [numChannels x 1]
-pctile_hi = prctile(peakZscore_null, hi_pctile, 2);
+pctile_thresh = prctile(peakZscore_null, thresh_pctile, 2);  % [numChannels x 1]
 
-isSigLo = peakZscore_obs < pctile_lo;
-isSigHi = peakZscore_obs > pctile_hi;
-isSignificant = isSigLo | isSigHi;
+isSignificant = peakZscore_obs > pctile_thresh;
 
 %% 4. Package output
 shuffleResults.peakZscore_obs   = peakZscore_obs;
 shuffleResults.peakZscore_null  = peakZscore_null;
-shuffleResults.pctile_lo        = pctile_lo;
-shuffleResults.pctile_hi        = pctile_hi;
-shuffleResults.isSigLo          = isSigLo;
-shuffleResults.isSigHi          = isSigHi;
+shuffleResults.pctile_thresh    = pctile_thresh;
 shuffleResults.isSignificant    = isSignificant;
 shuffleResults.Nshuffles        = Nshuffles;
 shuffleResults.alpha            = alpha;

@@ -31,8 +31,7 @@ end
 
 numChannels = length(shuffleResults.peakZscore_obs);
 peakZscore_obs = shuffleResults.peakZscore_obs;
-pctile_lo   = shuffleResults.pctile_lo;
-pctile_hi   = shuffleResults.pctile_hi;
+pctile_thresh = shuffleResults.pctile_thresh;
 isSignificant = shuffleResults.isSignificant;
 xVec = 1:numChannels;
 
@@ -54,10 +53,10 @@ box off
 
 subplot(2, 1, 2)
 hold on
-% Plot null median +/- CI per electrode
+% Plot null median and 95th percentile threshold per electrode
 nullMedian = median(shuffleResults.peakZscore_null, 2);
-errorbar(xVec, nullMedian, nullMedian - pctile_lo, pctile_hi - nullMedian, ...
-    '.', 'Color', [0.6, 0.6, 0.6], 'LineWidth', 1, 'DisplayName', 'Null median \pm CI');
+errorbar(xVec, nullMedian, zeros(size(nullMedian)), pctile_thresh - nullMedian, ...
+    '.', 'Color', [0.6, 0.6, 0.6], 'LineWidth', 1, 'DisplayName', 'Null median \rightarrow 95th pctile');
 % Overlay observed
 scatter(xVec(~isSignificant), peakZscore_obs(~isSignificant), 25, ...
     [0.3, 0.3, 0.7], 'filled', 'DisplayName', 'Not significant');
