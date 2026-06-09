@@ -5,9 +5,10 @@ function shuffleResults = stimShuffleTest(spikeData, allStimTimes, Params, Info)
 % shifting each electrode's spike times by a random offset (with
 % wrap-around within the recording duration), then recomputing the
 % proportion of trials where post-stim spike count > pre-stim spike count.
-% Significance is assessed per electrode with a two-tailed test (p < 0.05)
-% using the empirical 2.5th and 97.5th percentiles of the null distribution.
-% No multiple-comparison correction is applied.
+% Significance is assessed per electrode with a one-tailed (upper) test
+% (p < 0.05): an electrode is significant if its observed proportion falls
+% in the top 5% of the null distribution, i.e. above the empirical 95th
+% percentile. No multiple-comparison correction is applied.
 %
 % The metric for each electrode is: proportion of trials where the number
 % of spikes in the post-stimulus window exceeds the number of spikes in
@@ -42,11 +43,11 @@ function shuffleResults = stimShuffleTest(spikeData, allStimTimes, Params, Info)
 % shuffleResults : struct with the following fields
 %   .trialProp_obs     - [numChannels x 1] observed trial proportion for each electrode
 %   .trialProp_null    - [numChannels x Nshuffles] null trial proportion distributions
-%   .pctile_lo         - [numChannels x 1] lower percentile bound (2.5th)
-%   .pctile_hi         - [numChannels x 1] upper percentile bound (97.5th)
-%   .isSigLo           - [numChannels x 1] logical, true if trialProp_obs < pctile_lo
+%   .pctile_lo         - [numChannels x 1] lower percentile bound (5th, display only)
+%   .pctile_hi         - [numChannels x 1] upper percentile bound (95th, significance threshold)
+%   .isSigLo           - [numChannels x 1] logical, always false (lower tail not tested)
 %   .isSigHi           - [numChannels x 1] logical, true if trialProp_obs > pctile_hi
-%   .isSignificant     - [numChannels x 1] logical, true if significant (either tail)
+%   .isSignificant     - [numChannels x 1] logical, true if significant (upper tail only)
 %   .Nshuffles         - scalar, number of shuffles performed
 %   .alpha             - scalar, significance level used
 %   .postStimWindow    - [1 x 2] the post-stimulus window used
@@ -59,10 +60,10 @@ function shuffleResults = stimShuffleTest(spikeData, allStimTimes, Params, Info)
 %         offset uniformly drawn from (0, recordingDuration) with wrap-around.
 %      b. Recompute the trial proportion for every electrode using the
 %         shifted spike times aligned to the *original* stim times.
-% 3. For each electrode, determine the 2.5th and 97.5th percentiles of its
-%    null trial proportion distribution.
-% 4. Mark an electrode as significant if observed trial proportion falls outside
-%    the null percentile interval.
+% 3. For each electrode, determine the 95th percentile of its null trial
+%    proportion distribution (the 5th percentile is also stored for plotting).
+% 4. Mark an electrode as significant if observed trial proportion exceeds
+%    the 95th percentile of the null (top 5%, upper tail only).
 %
 % REFERENCE
 % ---------
@@ -141,16 +142,19 @@ else
     end
 end
 
-%% 3. Determine significance per electrode (two-tailed)
-lo_pctile = (alpha / 2) * 100;          % 2.5
-hi_pctile = (1 - alpha / 2) * 100;      % 97.5
+%% 3. Determine significance per electrode (one-tailed, upper)
+% An electrode is significant if its observed proportion falls in the top
+% alpha (5%) of the null distribution, i.e. above the (1 - alpha) percentile.
+% The lower percentile is computed for visualising the null spread only.
+hi_pctile = (1 - alpha) * 100;          % 95
+lo_pctile = alpha * 100;                % 5 (display only)
 
-pctile_lo = prctile(trialProp_null, lo_pctile, 2);  % [numChannels x 1]
+pctile_lo = prctile(trialProp_null, lo_pctile, 2);  % [numChannels x 1], display only
 pctile_hi = prctile(trialProp_null, hi_pctile, 2);
 
-isSigLo = trialProp_obs < pctile_lo;
 isSigHi = trialProp_obs > pctile_hi;
-isSignificant = isSigLo | isSigHi;
+isSigLo = false(numChannels, 1);        % lower tail not tested
+isSignificant = isSigHi;
 
 %% 4. Package output
 shuffleResults.trialProp_obs    = trialProp_obs;
