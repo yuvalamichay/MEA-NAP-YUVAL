@@ -71,7 +71,7 @@ if ~any(strcmp(app.StimdetectionmethodDropDown.Items, 'axionStimEvents'))
     app.StimdetectionmethodDropDown.Items{end+1} = 'axionStimEvents';
 end
 % Add a 'Stim .raw CSV' upload to the General tab (columns: raw file name, well,
-% stimulated electrode). It is read into Params.axionStimCSV and used by the
+% stimulated electrode; one row per stimulated electrode). It is read into Params.axionStimCSV and used by the
 % axionStimEvents method, in both the pipeline and the stim detection app.
 axionStimCSVLabel = uilabel(app.GeneralTab);
 axionStimCSVLabel.HorizontalAlignment = 'right';

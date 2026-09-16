@@ -4,10 +4,13 @@ function varargout = axionStimEventsTool(action, varargin)
 % Stimulation times are read straight from the Axion file's StimulationEvents
 % (never from the voltage trace). A CSV with columns
 %   (1) raw file name, (2) well, (3) stimulated electrode (channel id col*10+row)
-% decides which electrode carries those times in each well. The CSV is chosen
-% on the General tab of the GUI (Params.axionStimCSV); the .raw files are looked
-% for next to that CSV and in the MEA data folder. The same CSV/Params drive
-% both the batch pipeline and the interactive stim detection app.
+% lists the stimulated electrodes of each well, one row per electrode. A well
+% can have several rows (e.g. two electrodes stimulated alternately). Each
+% StimulationEvent records the well and electrode(s) it was delivered to, so
+% every listed electrode receives only the events delivered to it. The CSV is
+% chosen on the General tab of the GUI (Params.axionStimCSV); the .raw files are
+% looked for next to that CSV and in the MEA data folder. The same CSV/Params
+% drive both the batch pipeline and the interactive stim detection app.
 %
 % Actions:
 %   axionStimEventsTool('selectCSV', editFieldHandle, app)
@@ -34,7 +37,7 @@ function varargout = axionStimEventsTool(action, varargin)
             field = varargin{1};
             app = varargin{2};
             [csvName, csvPath] = uigetfile({'*.csv', 'CSV files (*.csv)'}, ...
-                'Select stim .raw CSV (raw file name, well, electrode)');
+                'Select stim .raw CSV (raw file name, well, electrode; one row per stimulated electrode)');
             if ~isequal(csvName, 0)
                 field.Value = fullfile(csvPath, csvName);
             end
@@ -104,9 +107,10 @@ end
 
 
 function csvRows = readAxionStimCSV(csvFullPath)
-% Read the CSV into a struct array with fields rawName / well / electrode.
-% Tolerates an optional header row, ignores blank rows, requires a numeric
-% electrode (channel id), and flags malformed or conflicting duplicate rows.
+% Read the CSV into a struct array with fields rawName / well / electrode, one
+% element per stimulated electrode. Tolerates an optional header row, ignores
+% blank rows, requires a numeric electrode (channel id), skips identical
+% duplicate rows and flags malformed rows.
 
     if ~isfile(csvFullPath)
         error('axionStimEvents:csvNotFound', 'Stim .raw CSV not found: %s', csvFullPath);
@@ -147,16 +151,12 @@ function csvRows = readAxionStimCSV(csvFullPath)
             continue
         end
 
-        key = lower([rawName '_' well]);
-        dupIdx = find(strcmp(seenKeys, key), 1);
-        if ~isempty(dupIdx)
-            if csvRows(dupIdx).electrode ~= elec
-                error('axionStimEvents:duplicateRow', ...
-                    'Conflicting duplicate CSV rows for %s (well %s): electrodes %d and %d.', ...
-                    rawName, well, csvRows(dupIdx).electrode, elec);
-            end
+        % A well may list several electrodes; only an exact repeat is dropped.
+        key = lower(sprintf('%s_%s_%d', rawName, well, elec));
+        if any(strcmp(seenKeys, key))
             warning('axionStimEvents:duplicateRow', ...
-                'Ignoring identical duplicate CSV row %d for %s (well %s).', r, rawName, well);
+                'Ignoring duplicate CSV row %d for %s (well %s, electrode %d).', ...
+                r, rawName, well, elec);
             continue
         end
 
@@ -174,8 +174,9 @@ end
 function [stimInfo, eventCache, rowMatched] = buildForRecording( ...
         recName, channelNames, coords, Params, csvRows, rawFolders, eventCache, rowMatched, app)
 % Assemble stimInfo for one recording (one well). The well is identified by
-% matching <rawName>_<well> from the CSV against the recording name; the full
-% set of StimulationEvent times is then assigned to the CSV-specified electrode.
+% matching <rawName>_<well> from the CSV against the recording name. Every CSV
+% row for that well names one stimulated electrode, which receives the
+% StimulationEvents delivered to that electrode in that well.
 
     recKey = stripKnownExt(recName);
 
@@ -186,45 +187,104 @@ function [stimInfo, eventCache, rowMatched] = buildForRecording( ...
         end
     end
 
-    if numel(matchIdx) > 1
-        error('axionStimEvents:ambiguousMatch', ...
-            'Multiple CSV rows match recording %s; cannot decide the stimulated electrode.', recName);
-    end
-
     if isempty(matchIdx)
         warning('axionStimEvents:noMatch', ...
             'No CSV row matches recording %s; assigning no stimulation to this well.', recName);
-        stimInfo = buildStimInfo(channelNames, coords, [], NaN, Params);
+        stimInfo = buildStimInfo(channelNames, coords, [], {}, Params);
         return
     end
 
     rowMatched(matchIdx) = true;
-    row = csvRows(matchIdx);
+    rows = csvRows(matchIdx);
+    rawName = rows(1).rawName;
+    well = rows(1).well;
+    electrodes = [rows.electrode];
 
-    if ~any(channelNames == row.electrode)
+    missing = electrodes(~ismember(electrodes, channelNames));
+    if ~isempty(missing)
         error('axionStimEvents:electrodeNotFound', ...
-            ['Electrode %d (CSV) is not a channel in recording %s. ' ...
-             'Available channels: %s.'], row.electrode, recName, mat2str(channelNames(:)'));
+            ['Electrode(s) %s (CSV) are not channels in recording %s. ' ...
+             'Available channels: %s.'], mat2str(missing), recName, mat2str(channelNames(:)'));
     end
 
-    [eventTimes, eventCache] = getEventTimes(rawFolders, row.rawName, eventCache, app);
-    if isempty(eventTimes)
+    [events, eventCache] = getEvents(rawFolders, rawName, eventCache, app);
+    stimTimes = cell(1, numel(electrodes));
+    if isempty(events.times)
         warning('axionStimEvents:noEvents', ...
             'No StimulationEvents found in raw file "%s"; well %s will have no stimulation times.', ...
-            row.rawName, recName);
+            rawName, recName);
+        stimInfo = buildStimInfo(channelNames, coords, electrodes, stimTimes, Params);
+        return
     end
 
-    stimInfo = buildStimInfo(channelNames, coords, eventTimes, row.electrode, Params);
+    if isempty(events.pairTime)
+        % The file does not say which electrode each event used. One listed
+        % electrode can still take every event; several cannot be told apart.
+        if numel(electrodes) > 1
+            error('axionStimEvents:noElectrodeInfo', ...
+                ['The stimulation events in raw file "%s" do not record which electrode ' ...
+                 'they were delivered to, so they cannot be split between electrodes %s ' ...
+                 'listed for well %s. List a single electrode for this well.'], ...
+                rawName, mat2str(electrodes), well);
+        end
+        warning('axionStimEvents:noElectrodeInfo', ...
+            ['The stimulation events in raw file "%s" do not record their electrode; ' ...
+             'assigning all %d of them to electrode %d of well %s.'], ...
+            rawName, numel(events.times), electrodes, well);
+        stimTimes{1} = events.times;
+        stimInfo = buildStimInfo(channelNames, coords, electrodes, stimTimes, Params);
+        return
+    end
+
+    [wellRow, wellCol, wellOk] = parseWell(well);
+    if ~wellOk
+        error('axionStimEvents:badWell', ...
+            'Cannot read well "%s" for raw file "%s"; expected a well name such as A1.', ...
+            well, rawName);
+    end
+
+    inWell = events.pairWellRow == wellRow & events.pairWellCol == wellCol;
+    wellChannels = unique(events.pairChannel(inWell))';
+    if ~any(inWell)
+        warning('axionStimEvents:noEventsInWell', ...
+            ['Raw file "%s" has no stimulation events in well %s; stimulated wells in ' ...
+             'this file: %s.'], rawName, well, strjoin(stimulatedWellNames(events), ', '));
+    end
+
+    for k = 1:numel(electrodes)
+        stimTimes{k} = unique(events.pairTime(inWell & events.pairChannel == electrodes(k)));
+        if isempty(stimTimes{k}) && any(inWell)
+            warning('axionStimEvents:noEventsForElectrode', ...
+                ['No stimulation events were delivered to electrode %d in well %s of raw file ' ...
+                 '"%s"; electrodes stimulated in this well: %s.'], ...
+                electrodes(k), well, rawName, mat2str(wellChannels));
+        end
+    end
+
+    unlisted = setdiff(wellChannels, electrodes);
+    if ~isempty(unlisted)
+        warning('axionStimEvents:unlistedElectrodes', ...
+            ['Electrode(s) %s in well %s of raw file "%s" were stimulated but are not in the ' ...
+             'CSV; their stimulation times are ignored.'], mat2str(unlisted), well, rawName);
+    end
+
+    stimInfo = buildStimInfo(channelNames, coords, electrodes, stimTimes, Params);
 end
 
 
-function [eventTimes, eventCache] = getEventTimes(rawFolders, rawName, eventCache, app)
-% Return the StimulationEvent times (seconds, column vector) for a raw file,
-% reading them via AxisFile and caching per raw file. Voltage is never loaded.
+function [events, eventCache] = getEvents(rawFolders, rawName, eventCache, app)
+% Return the StimulationEvents of a raw file, read via AxisFile and cached per
+% raw file (voltage is never loaded), as a struct with column vectors:
+%   times            all event times (seconds, sorted)
+%   pairTime, pairWellRow, pairWellCol, pairChannel
+%                    one entry per (event, electrode) the event was delivered
+%                    to; pairChannel is the channel id ElectrodeColumn*10 +
+%                    ElectrodeRow, as written by rawConvertFunc
+%   unlabelledTimes  times of events that name no electrode
 
     cacheKey = lower(rawName);
     if isKey(eventCache, cacheKey)
-        eventTimes = eventCache(cacheKey);
+        events = eventCache(cacheKey);
         return
     end
 
@@ -249,35 +309,90 @@ function [eventTimes, eventCache] = getEventTimes(rawFolders, rawName, eventCach
 
     statusUpdate(app, sprintf('axionStimEvents: reading stimulation events from %s', rawName));
     fileData = AxisFile(matchFile);
-    events = fileData.StimulationEvents;
-    if isempty(events)
-        eventTimes = [];
-    else
-        et = double([events.EventTime]);
-        eventTimes = sort(et(:));   % seconds, column vector
+    stimEvents = fileData.StimulationEvents;
+
+    numEvents = numel(stimEvents);
+    times = zeros(numEvents, 1);
+    pairTime = cell(numEvents, 1);
+    pairWellRow = cell(numEvents, 1);
+    pairWellCol = cell(numEvents, 1);
+    pairChannel = cell(numEvents, 1);
+    labelled = true(numEvents, 1);
+
+    for k = 1:numEvents
+        times(k) = double(stimEvents(k).EventTime);
+        % Electrodes is a ChannelMapping array, or a cell of them when the
+        % stimulation block drives more than one channel group.
+        mappings = stimEvents(k).Electrodes;
+        if iscell(mappings)
+            mappings = [mappings{:}];
+        end
+        if isempty(mappings)
+            labelled(k) = false;
+            continue
+        end
+        numMappings = numel(mappings);
+        pairTime{k}    = repmat(times(k), numMappings, 1);
+        pairWellRow{k} = double([mappings.WellRow])';
+        pairWellCol{k} = double([mappings.WellColumn])';
+        pairChannel{k} = double([mappings.ElectrodeColumn])' * 10 + double([mappings.ElectrodeRow])';
     end
 
-    eventCache(cacheKey) = eventTimes;
+    events = struct();
+    events.times = sort(times);
+    events.pairTime    = vertcat(zeros(0, 1), pairTime{:});
+    events.pairWellRow = vertcat(zeros(0, 1), pairWellRow{:});
+    events.pairWellCol = vertcat(zeros(0, 1), pairWellCol{:});
+    events.pairChannel = vertcat(zeros(0, 1), pairChannel{:});
+    events.unlabelledTimes = sort(times(~labelled));
+
+    % Warned once per file here (events are cached); when no event names an
+    % electrode, buildForRecording decides what to do instead.
+    if any(labelled) && ~all(labelled)
+        warning('axionStimEvents:unlabelledEvents', ...
+            ['%d of %d stimulation events in raw file "%s" do not record their electrode ' ...
+             'and are not assigned to any well.'], sum(~labelled), numEvents, rawName);
+    end
+
+    eventCache(cacheKey) = events;
 end
 
 
-function stimInfo = buildStimInfo(channelNames, coords, eventTimes, targetChannel, Params)
+function stimInfo = buildStimInfo(channelNames, coords, stimElectrodes, stimTimes, Params)
 % Build the stimInfo cell (one struct per channel) in the exact format the
-% existing methods produce. All StimulationEvent times are assigned to the
-% stimulated electrode; every other channel gets none. The blanking fields are
+% existing methods produce. Electrode stimElectrodes(k) receives the times in
+% stimTimes{k}; every other channel gets none. The blanking fields are
 % populated so downstream artifact removal ignores [stimTime, stimTime +
 % postStimWindowDur] (the GUI "post stim ignore duration").
+%
+% stimOrder ranks the stimulated electrodes of the well by their first
+% stimulation time (1 = stimulated first; electrodes first stimulated at the
+% same time share a rank); it is 0 for channels that were not stimulated.
 
     stimDur = Params.stimDuration;
     numChannels = length(channelNames);
-    eventTimes = eventTimes(:);
     stimInfo = cell(numChannels, 1);
 
+    firstTimes = inf(numel(stimElectrodes), 1);
+    for k = 1:numel(stimElectrodes)
+        if ~isempty(stimTimes{k})
+            firstTimes(k) = min(stimTimes{k});
+        end
+    end
+    stimOrder = zeros(numel(stimElectrodes), 1);
+    fired = isfinite(firstTimes);
+    if any(fired)
+        [~, ~, stimOrder(fired)] = unique(firstTimes(fired));
+    end
+
     for channel_idx = 1:numChannels
-        if ~isnan(targetChannel) && channelNames(channel_idx) == targetChannel
-            elecStimTimes = eventTimes;
-        else
+        k = find(stimElectrodes == channelNames(channel_idx), 1);
+        if isempty(k)
             elecStimTimes = [];
+            elecStimOrder = 0;
+        else
+            elecStimTimes = sort(stimTimes{k}(:));
+            elecStimOrder = stimOrder(k);
         end
 
         stimStruct = struct();
@@ -285,6 +400,7 @@ function stimInfo = buildStimInfo(channelNames, coords, eventTimes, targetChanne
         stimStruct.elecStimDur   = repmat(stimDur, length(elecStimTimes), 1);
         stimStruct.channelName   = channelNames(channel_idx);
         stimStruct.coords        = coords(channel_idx, :);
+        stimStruct.stimOrder     = elecStimOrder;
 
         % Each stimulation time starts a blank; the blank duration is left at 0
         % so the ignored window equals [stimTime, stimTime + postStimWindowDur].
@@ -299,9 +415,16 @@ function stimInfo = buildStimInfo(channelNames, coords, eventTimes, targetChanne
 end
 
 
+function names = stimulatedWellNames(events)
+    wells = unique([events.pairWellRow events.pairWellCol], 'rows');
+    names = arrayfun(@(i) sprintf('%c%d', 'A' + wells(i, 1) - 1, wells(i, 2)), ...
+        1:size(wells, 1), 'UniformOutput', false);
+end
+
+
 function warnUnmatchedRows(unmatchedRows, app)
-    names = arrayfun(@(r) sprintf('%s_%s', r.rawName, r.well), unmatchedRows, ...
-        'UniformOutput', false);
+    names = arrayfun(@(r) sprintf('%s_%s (electrode %d)', r.rawName, r.well, r.electrode), ...
+        unmatchedRows, 'UniformOutput', false);
     msg = sprintf('axionStimEvents: %d CSV row(s) did not match any processed recording: %s', ...
         numel(unmatchedRows), strjoin(names, ', '));
     warning('axionStimEvents:unmatchedRows', '%s', msg);
@@ -334,6 +457,21 @@ end
 function w = normalizeWell(w)
     w = strtrim(w);
     w = regexprep(w, '^_+', '');   % drop leading underscores if present
+end
+
+
+function [wellRow, wellCol, ok] = parseWell(well)
+% 'A1' -> row 1, column 1, matching the _A1 suffix written by rawConvertFunc and
+% the WellRow / WellColumn of the Axion channel mappings.
+    tok = regexp(well, '^([A-Za-z])0*(\d+)$', 'tokens', 'once');
+    ok = ~isempty(tok);
+    if ok
+        wellRow = double(upper(tok{1})) - double('A') + 1;
+        wellCol = str2double(tok{2});
+    else
+        wellRow = NaN;
+        wellCol = NaN;
+    end
 end
 
 

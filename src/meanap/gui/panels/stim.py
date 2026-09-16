@@ -53,7 +53,7 @@ class StimPanel(QWidget):
         self.stim_duration = _dspin(0.0, 10.0, 6, 0.00012, " s")
         self.pattern_thresh = _dspin(0.0, 10.0, 5, 0.005, " s")
         self.axion_csv = QLineEdit()
-        self.axion_csv.setPlaceholderText("CSV for the axionStimEvents method (rawName, well, electrode)")
+        self.axion_csv.setPlaceholderText("CSV for the axionStimEvents method (rawName, well, electrode; one row per stimulated electrode)")
         # The detection value is the one that changes per experiment; the
         # durations below it describe the stimulator, and the CSV only applies
         # to one of the six methods.

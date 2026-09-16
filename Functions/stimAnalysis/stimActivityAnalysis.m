@@ -39,13 +39,18 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
 
     
     %% Gather stimulation times
+    % One chronological column of every pattern's stimulation times. Taken from
+    % stimPatterns rather than per channel, so electrodes stimulated together
+    % count once and several stimulated electrodes (e.g. alternating, with
+    % different numbers of stimulations) combine into a single vector.
     allStimTimes = [];
-    
-    for channelIdx = 1:length(spikeData.stimInfo)
-        
-        allStimTimes = [allStimTimes, spikeData.stimInfo{channelIdx}.elecStimTimes];
-    
+
+    for patternIdx = 1:length(spikeData.stimPatterns)
+
+        allStimTimes = [allStimTimes; spikeData.stimPatterns{patternIdx}(:)];
+
     end
+    allStimTimes = sort(allStimTimes);
 
     %% Firing rate before and after stimulation 
     figName = '9_FR_before_after_stimulation';

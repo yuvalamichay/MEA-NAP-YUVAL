@@ -346,7 +346,8 @@ Params.stimulationMode = app.StimulationmodeCheckBox.Value;
 Params.automaticStimDetection = app.AutomaticstimdetectionCheckBox.Value;
 Params.stimDetectionMethod = app.StimdetectionmethodDropDown.Value;
 
-% Path to the CSV (raw file name, well, stimulated electrode) used by the
+% Path to the CSV (raw file name, well, stimulated electrode; one row per
+% stimulated electrode) used by the
 % 'axionStimEvents' method. The upload field is created at runtime on the
 % General tab (see runPipelineApp.m) and its handle stored via setappdata.
 Params.axionStimCSV = '';
