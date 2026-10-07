@@ -338,6 +338,7 @@ def save_spike_times_npz(
     waveforms: dict[int, dict[str, np.ndarray]] | None = None,
     thresholds: dict[int, dict[str, float]] | None = None,
     bursts: dict[str, np.ndarray] | None = None,
+    units: dict[str, np.ndarray] | None = None,
 ) -> None:
     """Save spike detection results to a ``.npz`` file.
 
@@ -368,6 +369,15 @@ def save_spike_times_npz(
     results are ragged — a variable number of bursts, each over a variable set
     of channels — and ``npz`` stores arrays, not structures; whoever writes it
     decides how to lay it out and gets it back the same way.
+
+    ``units`` is the same idea for a *sorted* file: a flat name→array mapping
+    written under a ``unit_`` prefix and handed back as :attr:`SpikeFile.units`.
+    In such a file every node is a unit, ``channels`` holds each unit's parent
+    electrode (so an electrode ID repeats when a sorter found several neurons
+    on it — which is what keeps grounding and the electrode heatmaps working
+    unchanged), and ``units`` carries what distinguishes them: an ID, the
+    electrode's column index, plotting coordinates, quality metrics and the
+    curation label. See :mod:`meanap.pipeline.spike_sorting`.
     """
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -391,6 +401,8 @@ def save_spike_times_npz(
             arrays[f"threshold_{ch_idx}_{method}"] = np.array([value], dtype=float)
     for name, value in (bursts or {}).items():
         arrays[f"burst_{name}"] = np.asarray(value)
+    for name, value in (units or {}).items():
+        arrays[f"unit_{name}"] = np.asarray(value)
 
     atomic_savez(path, **arrays)
 
@@ -459,6 +471,50 @@ def resolve_duration_s(
         return None, "unavailable"
 
 
+def truncation_window(
+    duration_s: float, trunc_rec: bool, trunc_length: float, trunc_keep: str,
+) -> tuple[float, float] | None:
+    """The ``(start, end)`` seconds of a recording that truncation keeps.
+
+    ``None`` when nothing is cut: truncation is off, or the recording is no
+    longer than ``trunc_length`` (MATLAB's ``formatSpikeTimes`` then keeps the
+    recording's own duration rather than claiming the longer one).
+    ``trunc_keep`` is ``"first"`` or ``"last"``.
+    """
+    if not trunc_rec or duration_s <= trunc_length:
+        return None
+    if trunc_keep == "first":
+        return 0.0, float(trunc_length)
+    if trunc_keep == "last":
+        return float(duration_s - trunc_length), float(duration_s)
+    raise ValueError(f"trunc_keep must be 'first' or 'last', not {trunc_keep!r}")
+
+
+def truncate_spike_times(
+    spike_times_dict: dict[int, np.ndarray],
+    duration_s: float,
+    params,
+) -> tuple[dict[int, np.ndarray], float]:
+    """Apply ``params.trunc_rec`` to one recording's spike times.
+
+    Port of the truncation in ``formatSpikeTimes.m``, extended to keep the last
+    ``trunc_length`` seconds as well as the first. Spike times kept from the
+    end are shifted to start at 0, so everything downstream — firing rates,
+    rasters, STTC surrogates — sees a recording that runs ``[0, duration)``
+    either way. Returns the spike times and the duration they now span.
+    """
+    window = truncation_window(duration_s, params.trunc_rec,
+                               params.trunc_length, params.trunc_keep)
+    if window is None:
+        return spike_times_dict, duration_s
+    start, end = window
+    out = {}
+    for ch, times in spike_times_dict.items():
+        times = np.asarray(times, dtype=float)
+        out[ch] = times[(times >= start) & (times <= end)] - start
+    return out, end - start
+
+
 def load_spike_times_npz(path: str | Path) -> dict[int, dict[str, np.ndarray]]:
     """Load spike times saved by ``save_spike_times_npz``."""
     data = np.load(path)
@@ -510,6 +566,15 @@ class SpikeFile:
     #: Burst detection results, exactly as whoever saved them laid them out.
     #: Empty unless the file was written with some.
     bursts: dict[str, np.ndarray] = field(default_factory=dict)
+    #: Per-unit arrays of a spike-*sorted* file (``id``, ``channel_index``,
+    #: ``coords``, ``label``, quality metrics…), aligned with ``channels``.
+    #: Empty for a detected file, which is how a reader tells the two apart.
+    units: dict[str, np.ndarray] = field(default_factory=dict)
+
+    @property
+    def sorted(self) -> bool:
+        """Whether the nodes are sorted units rather than electrodes."""
+        return bool(self.units)
 
     @property
     def methods(self) -> list[str]:
@@ -646,6 +711,8 @@ def _load_spike_file_npz(path: Path) -> SpikeFile:
     thresholds: dict[int, dict[str, float]] = {}
     bursts = {key[len("burst_"):]: data[key]
               for key in data.files if key.startswith("burst_")}
+    units = {key[len("unit_"):]: data[key]
+             for key in data.files if key.startswith("unit_")}
     for key in data.files:
         for prefix, store in (("waveforms_", waveforms), ("threshold_", thresholds)):
             if not key.startswith(prefix):
@@ -660,5 +727,5 @@ def _load_spike_file_npz(path: Path) -> SpikeFile:
     return SpikeFile(
         path=path, spike_times=spike_times, waveforms=waveforms,
         thresholds=thresholds, channels=channels, fs=fs, duration_s=duration,
-        bursts=bursts,
+        bursts=bursts, units=units,
     )

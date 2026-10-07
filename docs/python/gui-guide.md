@@ -77,6 +77,65 @@ switching back shortens them again). This only happens while the field is still
 on a default: lags you typed yourself are never overwritten, and neither are
 lags that came from a parameter file.
 
+## Versions and updates
+
+The version number beside the Mode selector is also a button. It opens
+**MEA-NAP versions**, which shows which copy of MEA-NAP is running and lets you
+choose another.
+
+**Cutting edge** is the `main` branch on GitHub. New features and fixes land
+there between releases. When the window opens it checks GitHub in the
+background, and if your clone has fallen behind, the button changes to
+**v1.11.0 ⬆ update**. **Download update** fast-forwards your clone to GitHub's
+`main`, and **Restart MEA-NAP** reopens the window on the new code. If the
+update changes `pyproject.toml` or `uv.lock`, the dialog tells you to run
+`uv sync` before restarting.
+
+The update only ever moves forward. It changes nothing, and tells you why, if:
+
+- you have edited a file that the update also changes. Commit or stash your
+  edit first.
+- your `main` has commits of its own. Merge or rebase them yourself.
+- your clone is on a branch other than `main`.
+
+**A release** is a tagged version (`v1.10.2`, …) that stays exactly as it was
+published. Use one to reproduce an analysis. Choosing one checks it out into
+its own folder under `~/.meanap/versions/`, using the history already in your
+clone, so nothing is downloaded again. Set `MEANAP_VERSIONS_DIR` to use a
+different folder. Your MEA-NAP folder is not touched, and the release opens in
+a new window. Releases marked **(MATLAB)** predate the Python GUI. They open in
+MATLAB (`runPipelineApp`) if `matlab` is on your PATH. Otherwise the dialog
+shows the folder and tells you what to run in it.
+
+**A development build** (`v1.11.0-dev.23`, …) is `main` as it was right after
+one change was merged. A build is made automatically for every merge, and it
+has no written release notes. The dialog lists them under **Development
+builds**, between cutting edge and the official releases. It shows the five newest, plus the one
+you're running and your default. Open one, or set it as the default, the same
+way as a release. Use one to go back to "the version from before that last
+change", or to pin a result made between official releases. If you're running
+an official release, you're only told about newer official releases. If you're
+running a development build, you're told about newer builds too.
+
+Every Python run records the exact build it ran with, as well as the version
+number. The record goes in `params.json` and the bundle manifest, under
+`_meanap.build`: the nearest tag, the commit, and whether the code had
+uncommitted edits. In the results viewer, hover over the version to see it.
+
+**The default version** is the one `meanap-gui` opens. The last version you
+open from the dialog becomes the default. To choose one without opening it,
+use **Set as default**. The default is marked **★ default** in the list. When
+MEA-NAP starts in a different copy, it switches to the default before any
+window appears, setting the release up first if needed. Run
+`meanap-gui --here` to open the copy you started just once, ignoring the
+default. Only versions with the Python GUI can be the default. Opening a
+**(MATLAB)** release leaves the default unchanged, so MEA-NAP never opens
+MATLAB on its own at startup. Until you choose a version, there is no default
+and `meanap-gui` opens whichever copy you run it from.
+
+Untick **Check for updates when MEA-NAP starts** to stop the startup check. You
+can still check from the dialog at any time.
+
 ## Data
 
 What you are analysing, what that data is, and where the results go — read top

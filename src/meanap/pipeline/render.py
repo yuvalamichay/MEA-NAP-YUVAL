@@ -38,7 +38,7 @@ from pathlib import Path
 
 import numpy as np
 
-from meanap.params import Params
+from meanap.params import Params, active_spike_method
 from meanap.timescale import timescale_kind
 from meanap.catnap.rasters import RASTER_FIGURES
 from meanap.pipeline.bundle import RunBundle, is_os_metadata
@@ -226,7 +226,19 @@ def load_context(bundle: RunBundle | Path | str) -> RenderContext:
         root = Path(bundle)
         params = (load_params(root / PARAMS_FILENAME)[0]
                   if (root / PARAMS_FILENAME).exists() else Params())
-        mode = "catnap" if params.suite2p_mode else "ephys"
+        # The manifest records what the run actually was, so prefer it. Deriving
+        # the mode from params alone calls a CAT-NAP run "ephys" whenever
+        # params.json is absent — the defaults then say suite2p_mode is off.
+        mode = None
+        manifest_path = root / "manifest.json"
+        if manifest_path.exists():
+            import json as _json
+            try:
+                mode = (_json.loads(manifest_path.read_text()) or {}).get("mode")
+            except (OSError, ValueError):
+                mode = None
+        if not mode:
+            mode = "catnap" if params.suite2p_mode else "ephys"
         rec_rows = _recordings_from_csv(root)
 
     recordings = {
@@ -1710,7 +1722,7 @@ def render_activity_figure(
     calls — with the spike times and metrics reassembled from the bundle.
     """
     from meanap.pipeline.figure_output import figure_dpi
-    from meanap.pipeline.io import load_spike_times_npz
+    from meanap.pipeline.io import load_spike_times_npz, truncate_spike_times
     from meanap.pipeline.plotting_step2 import plot_neuronal_activity_checks
     from meanap.pipeline.spreadsheet import ground_spike_times_dict, parse_ground_electrodes
 
@@ -1743,12 +1755,13 @@ def render_activity_figure(
     # electrode must stay empty in the raster.
     full = load_spike_times_npz(spike_path)
     spike_times_dict = {
-        ch: full.get(ch, {}).get(params.spikes_method, np.array([]))
+        ch: full.get(ch, {}).get(active_spike_method(params), np.array([]))
         for ch in range(n_channels)
     }
     ground = parse_ground_electrodes(rec.ground)
     if ground:
         spike_times_dict = ground_spike_times_dict(spike_times_dict, channels, ground)
+    spike_times_dict, duration_s = truncate_spike_times(spike_times_dict, duration_s, params)
 
     batch_max = _activity_batch_max(ctx)
     with figure_dpi(dpi):
