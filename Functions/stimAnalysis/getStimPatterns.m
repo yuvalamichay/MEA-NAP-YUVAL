@@ -19,9 +19,21 @@ if strcmp(Params.verboseLevel, 'High')
 end
 
 % 2 | start from electrode with least stimulation number to look for
-% patterns
+% patterns. For axionStimEvents, go in order of first stimulation instead, so
+% that pattern 1 is the electrode stimulated first in every well (e.g. order 1
+% of alternately stimulated electrodes).
 stimPatterns = {};
-[~, elecIndexSorted] = sort(numStimPerElectrode);
+if isfield(Params, 'stimDetectionMethod') && strcmp(Params.stimDetectionMethod, 'axionStimEvents')
+    firstStimTime = inf(numElectrode, 1);
+    for elecIndex = 1:numElectrode
+        if ~isempty(stimInfo{elecIndex}.elecStimTimes)
+            firstStimTime(elecIndex) = min(stimInfo{elecIndex}.elecStimTimes);
+        end
+    end
+    [~, elecIndexSorted] = sort(firstStimTime);
+else
+    [~, elecIndexSorted] = sort(numStimPerElectrode);
+end
 
 for eIndex = 1:length(stimInfo)
     

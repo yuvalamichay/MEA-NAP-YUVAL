@@ -7,7 +7,15 @@ function varargout = axionStimEventsTool(action, varargin)
 % lists the stimulated electrodes of each well, one row per electrode. A well
 % can have several rows (e.g. two electrodes stimulated alternately). Each
 % StimulationEvent records the well and electrode(s) it was delivered to, so
-% every listed electrode receives only the events delivered to it. The CSV is
+% every listed electrode receives only the events delivered to it.
+%
+% An optional 4th column, (4) order, covers raw files whose StimulationEvents
+% do not record their electrode. It is only used when a well lists several
+% electrodes and the file has no electrode information: the electrodes are then
+% assumed to have been stimulated in strict alternation (1, 2, 1, 2, ...), and
+% order numbers them 1..n, with 1 the electrode stimulated first. Wells listing
+% a single electrode do not need it. The header text of this column is not
+% checked. The CSV is
 % chosen on the General tab of the GUI (Params.axionStimCSV); the .raw files are
 % looked for next to that CSV and in the MEA data folder. The same CSV/Params
 % drive both the batch pipeline and the interactive stim detection app.
@@ -37,7 +45,7 @@ function varargout = axionStimEventsTool(action, varargin)
             field = varargin{1};
             app = varargin{2};
             [csvName, csvPath] = uigetfile({'*.csv', 'CSV files (*.csv)'}, ...
-                'Select stim .raw CSV (raw file name, well, electrode; one row per stimulated electrode)');
+                'Select stim .raw CSV (raw file name, well, electrode, optional order; one row per stimulated electrode)');
             if ~isequal(csvName, 0)
                 field.Value = fullfile(csvPath, csvName);
             end
@@ -107,10 +115,11 @@ end
 
 
 function csvRows = readAxionStimCSV(csvFullPath)
-% Read the CSV into a struct array with fields rawName / well / electrode, one
-% element per stimulated electrode. Tolerates an optional header row, ignores
-% blank rows, requires a numeric electrode (channel id), skips identical
-% duplicate rows and flags malformed rows.
+% Read the CSV into a struct array with fields rawName / well / electrode /
+% order, one element per stimulated electrode. Tolerates an optional header
+% row, ignores blank rows, requires a numeric electrode (channel id), skips
+% identical duplicate rows and flags malformed rows. order comes from the
+% optional 4th column and is NaN when that column is absent or blank.
 
     if ~isfile(csvFullPath)
         error('axionStimEvents:csvNotFound', 'Stim .raw CSV not found: %s', csvFullPath);
@@ -123,7 +132,8 @@ function csvRows = readAxionStimCSV(csvFullPath)
              'electrode); found %d.'], csvFullPath, size(raw, 2));
     end
 
-    csvRows = struct('rawName', {}, 'well', {}, 'electrode', {});
+    hasOrderCol = size(raw, 2) >= 4;
+    csvRows = struct('rawName', {}, 'well', {}, 'electrode', {}, 'order', {});
     seenKeys = {};
 
     for r = 1:size(raw, 1)
@@ -151,6 +161,19 @@ function csvRows = readAxionStimCSV(csvFullPath)
             continue
         end
 
+        % A bad order would silently change which events each electrode gets,
+        % so it stops the run rather than skipping the row.
+        order = NaN;
+        if hasOrderCol
+            [order, orderOk] = toOrder(raw{r, 4});
+            if ~orderOk
+                error('axionStimEvents:badOrder', ...
+                    ['CSV row %d: order "%s" must be a whole number of 1 or more ' ...
+                     '(1 = electrode stimulated first), or left blank.'], ...
+                    r, toChar(raw{r, 4}));
+            end
+        end
+
         % A well may list several electrodes; only an exact repeat is dropped.
         key = lower(sprintf('%s_%s_%d', rawName, well, elec));
         if any(strcmp(seenKeys, key))
@@ -160,7 +183,8 @@ function csvRows = readAxionStimCSV(csvFullPath)
             continue
         end
 
-        csvRows(end+1) = struct('rawName', rawName, 'well', well, 'electrode', elec); %#ok<AGROW>
+        csvRows(end+1) = struct('rawName', rawName, 'well', well, 'electrode', elec, ...
+            'order', order); %#ok<AGROW>
         seenKeys{end+1} = key; %#ok<AGROW>
     end
 
@@ -219,13 +243,22 @@ function [stimInfo, eventCache, rowMatched] = buildForRecording( ...
 
     if isempty(events.pairTime)
         % The file does not say which electrode each event used. One listed
-        % electrode can still take every event; several cannot be told apart.
+        % electrode can still take every event; several can only be told apart
+        % through the CSV order column, which asserts they alternated.
         if numel(electrodes) > 1
-            error('axionStimEvents:noElectrodeInfo', ...
-                ['The stimulation events in raw file "%s" do not record which electrode ' ...
-                 'they were delivered to, so they cannot be split between electrodes %s ' ...
-                 'listed for well %s. List a single electrode for this well.'], ...
-                rawName, mat2str(electrodes), well);
+            orders = [rows.order];
+            if ~isequal(sort(orders), 1:numel(electrodes))
+                error('axionStimEvents:noElectrodeInfo', ...
+                    ['The stimulation events in raw file "%s" do not record which electrode ' ...
+                     'they were delivered to, so they cannot be split between electrodes %s ' ...
+                     'listed for well %s (orders given: %s). If they were stimulated ' ...
+                     'alternately, give them the orders 1 to %d in the 4th CSV column ' ...
+                     '(1 = stimulated first); otherwise list a single electrode for this well.'], ...
+                    rawName, mat2str(electrodes), well, mat2str(orders), numel(electrodes));
+            end
+            stimTimes = assignAlternating(events.times, orders, electrodes, rawName, well);
+            stimInfo = buildStimInfo(channelNames, coords, electrodes, stimTimes, Params);
+            return
         end
         warning('axionStimEvents:noElectrodeInfo', ...
             ['The stimulation events in raw file "%s" do not record their electrode; ' ...
@@ -269,6 +302,43 @@ function [stimInfo, eventCache, rowMatched] = buildForRecording( ...
     end
 
     stimInfo = buildStimInfo(channelNames, coords, electrodes, stimTimes, Params);
+end
+
+
+function stimTimes = assignAlternating(times, orders, electrodes, rawName, well)
+% Split unlabelled event times between electrodes stimulated in strict
+% alternation: with n electrodes, the one with order j receives events j, j+n,
+% j+2n, ... of the sorted event list. The alternation is the investigator's
+% assertion (CSV order column), not something read from the file, so it is
+% always reported, and an uneven event train is flagged because one missing or
+% extra event would swap the assignment of every event after it.
+
+    n = numel(electrodes);
+    stimTimes = cell(1, n);
+    for k = 1:n
+        stimTimes{k} = times(orders(k):n:end);
+    end
+
+    [~, byOrder] = sort(orders);
+    warning('axionStimEvents:alternating', ...
+        ['Raw file "%s" does not record which electrode each stimulation used; ' ...
+         'assigning its %d events alternately to electrodes %s of well %s, in that ' ...
+         'order (from the CSV order column).'], ...
+        rawName, numel(times), mat2str(electrodes(byOrder)), well);
+
+    isi = diff(times);
+    if numel(isi) > 1
+        medianIsi = median(isi);
+        irregular = abs(isi - medianIsi) > 0.1 * medianIsi;
+        if any(irregular)
+            warning('axionStimEvents:irregularTrain', ...
+                ['%d of %d intervals between stimulation events in raw file "%s" differ ' ...
+                 'from the median interval (%.4g s) by more than 10%%. A missing or extra ' ...
+                 'event would swap the alternating assignment of all later events in ' ...
+                 'well %s; check the stimulation times.'], ...
+                sum(irregular), numel(isi), rawName, medianIsi, well);
+        end
+    end
 end
 
 
@@ -511,6 +581,26 @@ function [id, ok] = toElectrodeId(v)
     end
     if ok
         id = round(id);
+    end
+end
+
+
+function [order, ok] = toOrder(v)
+% Optional order column: blank is NaN (not given); otherwise it must be a
+% whole number of 1 or more.
+    order = NaN;
+    if isBlankCell(v)
+        ok = true;
+        return
+    end
+    if isnumeric(v) && isscalar(v)
+        n = double(v);
+    else
+        n = str2double(toChar(v));
+    end
+    ok = isfinite(n) && n >= 1 && n == round(n);
+    if ok
+        order = n;
     end
 end
 
