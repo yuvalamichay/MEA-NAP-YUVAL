@@ -19,14 +19,13 @@ if ~isfolder(stimDetectionFolder)
     mkdir(stimDetectionFolder)
 end
 
-% The 'axionStimEvents' method reads stimulation times straight from the Axion
-% file's StimulationEvents (CSV-driven), not from the voltage trace. The CSV is
-% chosen with the 'Stim .raw CSV' button on the General tab (Params.axionStimCSV).
+% The 'axionStimEvents' method reads stimulation times and stimulated electrodes
+% straight from the StimulationEvents of the .raw files in the MEA data folder
+% (Params.rawData), not from the voltage trace. The cache of events is cleared
+% so every run re-reads the .raw files and repeats their warnings.
 useAxionEvents = strcmp(Params.stimDetectionMethod, 'axionStimEvents');
-if useAxionEvents && (~isfield(Params, 'axionStimCSV') || isempty(Params.axionStimCSV))
-    error('axionStimEvents:notConfigured', ...
-        ['Select the stim .raw CSV with the "Stim .raw CSV" button on the General ' ...
-         'tab before running the axionStimEvents stim detection method.']);
+if useAxionEvents
+    axionStimEventsTool('reset');
 end
 
 for expIdx = 1:length(ExpName)
@@ -68,12 +67,6 @@ for expIdx = 1:length(ExpName)
     % Plot stim detection checks
     plotStimDetectionChecks(rawData, stimInfo, expSubFolder, Params);
 
-end
-
-% Surface any CSV rows that never matched a processed recording (e.g. a file
-% that is not part of this analysis run).
-if useAxionEvents
-    axionStimEventsTool('warnUnmatched', app);
 end
 
 end

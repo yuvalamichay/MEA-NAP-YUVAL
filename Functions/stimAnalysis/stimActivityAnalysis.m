@@ -732,6 +732,22 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             end
             zscore_response = (poststim_mean_hz_dprime - baseline_mean_hz_dprime) / baseline_std_hz_safe;
 
+            % Time of the peak of the z-scored response PSTH (ms after the stimulus),
+            % searched over t >= 0 like peak_time_ms. NaN when there are no
+            % post-stimulus spikes, so there is no peak.
+            zscore_psth_resp = (resp_metrics.psth_smooth - baseline_mean_hz_dprime) ./ baseline_std_hz_safe;
+            post_stim_mask = resp_metrics.time_vector_s >= 0;
+            if any(resp_metrics.psth_smooth(post_stim_mask) > 0)
+                post_stim_times_s = resp_metrics.time_vector_s(post_stim_mask);
+                [~, zmax_idx] = max(zscore_psth_resp(post_stim_mask));
+                time_to_zmax_ms = post_stim_times_s(zmax_idx) * 1000;
+                % Same peak as an index into the full PSTH, for the Zmax marker
+                zmax_full_idx = find(post_stim_mask, 1) + zmax_idx - 1;
+            else
+                time_to_zmax_ms = NaN;
+                zmax_full_idx = NaN;
+            end
+
             % ---------------------------------------------------------------
             % STEP 5.1h: DATA ORGANIZATION AND STORAGE
             % ---------------------------------------------------------------
@@ -761,6 +777,8 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             temp_data{valid_channel_count}.baseline_mean_hz_dprime = baseline_mean_hz_dprime;
             temp_data{valid_channel_count}.baseline_std_hz_safe = baseline_std_hz_safe;
             temp_data{valid_channel_count}.zscore_response = zscore_response;
+            temp_data{valid_channel_count}.time_to_zmax_ms = time_to_zmax_ms;
+            temp_data{valid_channel_count}.zmax_full_idx = zmax_full_idx;
 
             % Storing metrics for final output structure
             electrodeLevelResponse_pattern_x(valid_channel_count).channel_id = channel_id;
@@ -774,6 +792,7 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
             electrodeLevelResponse_pattern_x(valid_channel_count).halfRmax_time_ms = halfRmax_time_s * 1000;
             electrodeLevelResponse_pattern_x(valid_channel_count).d_prime = d_prime;
             electrodeLevelResponse_pattern_x(valid_channel_count).zscore = zscore_response;
+            electrodeLevelResponse_pattern_x(valid_channel_count).time_to_zmax_ms = time_to_zmax_ms;
             electrodeLevelResponse_pattern_x(valid_channel_count).psth_window_s = psth_window_s;
             electrodeLevelResponse_pattern_x(valid_channel_count).median_latency_ms = channelMedianSpikeLatency_ms(channelIdx, patternIdx);
         end % End of channel loop
@@ -817,23 +836,27 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                 zscore_psth = (data.resp_metrics.psth_smooth - baseline_mean_hz_dprime) ./ baseline_std_hz_safe;
                 zscore_baseline_psth = (data.mean_baseline_psth - baseline_mean_hz_dprime) ./ baseline_std_hz_safe;
 
-                % Identify peak and half-maximum points in z-score space
-                half_psth = length(zscore_psth)/2;
-                [zscore_peak_val, zscore_peak_idx] = max(zscore_psth(half_psth:end));
-                zscore_peak_idx = zscore_peak_idx + half_psth;
-                zscore_peak_time_ms = data.resp_metrics.time_vector_s(zscore_peak_idx) * 1000;
+                % Identify peak and half-maximum points in z-score space. The
+                % peak is the one saved as time_to_zmax_ms (searched over
+                % t >= 0 in STEP 5.1g), so the Zmax marker matches the CSV.
+                % NaN when there are no post-stimulus spikes: no markers.
+                zscore_peak_idx = data.zmax_full_idx;
+                zscore_peak_time_ms = NaN;
+                zscore_halfmax_time_ms = NaN;
+                zscore_halfmax_val = NaN;
+                if ~isnan(zscore_peak_idx)
+                    zscore_peak_val = zscore_psth(zscore_peak_idx);
+                    zscore_peak_time_ms = data.resp_metrics.time_vector_s(zscore_peak_idx) * 1000;
 
-                % Calculate half-maximum decay time
-                zscore_halfmax = zscore_peak_val / 2;
-                zscore_halfmax_idx = find(zscore_psth(zscore_peak_idx:end) <= zscore_halfmax, 1, 'first');
+                    % Calculate half-maximum decay time
+                    zscore_halfmax = zscore_peak_val / 2;
+                    zscore_halfmax_idx = find(zscore_psth(zscore_peak_idx:end) <= zscore_halfmax, 1, 'first');
 
-                if ~isempty(zscore_halfmax_idx)
-                    zscore_halfmax_idx = zscore_halfmax_idx + zscore_peak_idx - 1;
-                    zscore_halfmax_time_ms = data.resp_metrics.time_vector_s(zscore_halfmax_idx) * 1000;
-                    zscore_halfmax_val = zscore_psth(zscore_halfmax_idx);
-                else
-                    zscore_halfmax_time_ms = NaN;
-                    zscore_halfmax_val = NaN;
+                    if ~isempty(zscore_halfmax_idx)
+                        zscore_halfmax_idx = zscore_halfmax_idx + zscore_peak_idx - 1;
+                        zscore_halfmax_time_ms = data.resp_metrics.time_vector_s(zscore_halfmax_idx) * 1000;
+                        zscore_halfmax_val = zscore_psth(zscore_halfmax_idx);
+                    end
                 end
 
                 % ---------------------------------------------------------------
@@ -878,12 +901,14 @@ function stimActivityAnalysis(spikeData, Params, Info, figFolder, oneFigureHandl
                     'k-', 'LineWidth', 2, 'DisplayName', 'Mean Baseline (Z-score)');
 
                 % Add Zmax markers
-                plot(zscore_peak_time_ms, zscore_peak_val, ...
-                    'bo', 'MarkerFaceColor', 'b', 'MarkerSize', 7, 'HandleVisibility', 'off');
-                text(zscore_peak_time_ms, zscore_peak_val, ...
-                    ' Z_{max}', ...
-                    'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left', ...
-                    'Color', 'k', 'FontWeight', 'bold');
+                if ~isnan(zscore_peak_time_ms)
+                    plot(zscore_peak_time_ms, zscore_peak_val, ...
+                        'bo', 'MarkerFaceColor', 'b', 'MarkerSize', 7, 'HandleVisibility', 'off');
+                    text(zscore_peak_time_ms, zscore_peak_val, ...
+                        ' Z_{max}', ...
+                        'VerticalAlignment', 'bottom', 'HorizontalAlignment', 'left', ...
+                        'Color', 'k', 'FontWeight', 'bold');
+                end
 
                 % Add half-maximum decay marker 
                 if ~isnan(zscore_halfmax_time_ms)

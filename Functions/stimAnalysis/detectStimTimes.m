@@ -339,11 +339,11 @@ for channel_idx = 1:numChannels
 
 
     elseif strcmp(stimDetectionMethod, 'axionStimEvents')
-        % Stimulation times for this method come from the Axion file's
-        % StimulationEvents (CSV-driven) and are assembled in batchDetectStim,
-        % not from the voltage trace. The interactive preview has no
-        % recording/CSV context, so report no stimulation here rather than
-        % erroring out.
+        % Stimulation times for this method come from the StimulationEvents
+        % of the Axion .raw file and are assembled by axionStimEventsTool
+        % (called from batchDetectStim and the stim detection app), not from
+        % the voltage trace. This function has no recording name to find the
+        % .raw with, so report no stimulation here rather than erroring out.
         elecStimTimes = [];
 
     else

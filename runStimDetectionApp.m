@@ -130,11 +130,13 @@ while isvalid(stimDetectionAppObj)
             'Running stim detection...'];
         drawnow
         if strcmp(Params.stimDetectionMethod, 'axionStimEvents')
-            % Read stim times from the Axion StimulationEvents; the CSV uploaded
-            % on the General tab says which electrode was stimulated in this well.
-            [~, previewRecName] = fileparts(stimDetectionAppObj.DatapathEditField.Value);
+            % Read stim times and stimulated electrodes from the StimulationEvents
+            % of the .raw this well came from. The previewed file's folder is
+            % searched too, so the .raw next to the .mat is found even if the
+            % main GUI's MEA data folder points elsewhere.
+            [previewFolder, previewRecName] = fileparts(stimDetectionAppObj.DatapathEditField.Value);
             stimInfo = axionStimEventsTool('build', previewRecName, ...
-                rawData.channels, Params.coords, Params, MEANAPapp);
+                rawData.channels, Params.coords, Params, MEANAPapp, previewFolder);
         else
             stimInfo = detectStimTimes(rawData.dat, Params, rawData.channels, Params.coords);
         end

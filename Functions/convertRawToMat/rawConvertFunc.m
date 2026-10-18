@@ -92,7 +92,17 @@ for i = 1:length(filenames)
         if (strcmp(suffix, '.raw')) && (~strcmp(filenames(i).name(1:2), '._'))
             % For each recording, this step loads the raw data calling a
             % function from the AxIS MATLAB Files folder
-            AllData = AxisFile(fullfile(raw_file_dir, filenames(i).name)).RawVoltageData.LoadData;
+            axFile  = AxisFile(fullfile(raw_file_dir, filenames(i).name));
+            voltage = axFile.RawVoltageData;
+            % Save the file's own sampling rate: stimulation times read from
+            % the .raw (axionStimEvents) use it, and spike times must match.
+            fileFs  = double(voltage.SamplingFrequency);
+            if abs(fileFs - fs) > 0.5
+                warning('rawConvertFunc:fsMismatch', ...
+                    '%s was recorded at %g Hz but the GUI says %g Hz; saving the file''s rate.', ...
+                    filenames(i).name, fileFs, fs);
+            end
+            AllData = voltage.LoadData;
             % For each recording, this step loops over the wells to extra
             % the voltage vectors. Again this uses functions from the AxIS
             % MATLAB File folder
@@ -118,9 +128,11 @@ for i = 1:length(filenames)
                         
                         % This is the step saves the .mat file for each MEA
                         % (well) with voltage vectors (dat), the names/location
-                        % of the electrodes (channels) and  the acquisition rate (fs). 
+                        % of the electrodes (channels) and  the acquisition rate (fs,
+                        % the file's own rate).
                         % Setting MATLAB version "-v7.3" appears necessary for saving.
-                        save(savenamefile, '-v7.3', "dat", "channels", "fs")
+                        wellData = struct('dat', dat, 'channels', channels, 'fs', fileFs);
+                        save(savenamefile, '-v7.3', '-struct', 'wellData')
                     end 
                 end
                end

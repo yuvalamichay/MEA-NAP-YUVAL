@@ -20,8 +20,7 @@ end
 
 % 2 | start from electrode with least stimulation number to look for
 % patterns. For axionStimEvents, go in order of first stimulation instead, so
-% that pattern 1 is the electrode stimulated first in every well (e.g. order 1
-% of alternately stimulated electrodes).
+% that pattern 1 is the electrode stimulated first in every well.
 stimPatterns = {};
 if isfield(Params, 'stimDetectionMethod') && strcmp(Params.stimDetectionMethod, 'axionStimEvents')
     firstStimTime = inf(numElectrode, 1);
