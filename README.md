@@ -139,3 +139,7 @@ make html
 you can then open your website in `_build/html/index.html`, and read the "How to contribute" section of the website to learn more about editing the documentation.
 
 
+
+## Headless MATLAB hdMEA analysis
+
+For converted SpyKING CIRCUS / MaxWell recordings, see [the hdMEA headless guide](docs/hdmea-headless.md) and `examples/hdmea_config_example.m`. The runner executes Steps 2–4 with configurable electrode coordinates and data paths.

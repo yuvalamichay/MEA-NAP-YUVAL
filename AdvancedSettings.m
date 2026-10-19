@@ -134,7 +134,14 @@ Params.kdeWidthForOnePoint = 0;  % bandwidth for KDE (in half violin plots) if t
 %
 Params.includeChannelNumberInPlots = 0;  % whether to plot channel ID in heatmaps and node plots
 
-[Params.channels,Params.coords] = getCoordsFromLayout(Params.channelLayout);
+customCoordCsv = '';
+if isfield(Params, 'customCoordCsv')
+    customCoordCsv = Params.customCoordCsv;
+    if iscell(customCoordCsv)
+        customCoordCsv = customCoordCsv{1};
+    end
+end
+[Params.channels,Params.coords] = getCoordsFromLayout(Params.channelLayout, customCoordCsv);
 
 %% Plotting : colormap settings 
 % Network plot colormap bounds 

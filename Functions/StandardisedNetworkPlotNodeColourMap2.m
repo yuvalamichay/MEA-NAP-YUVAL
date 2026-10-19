@@ -175,9 +175,14 @@ mycolours = colormap;
 
 if strcmp(plotType,'grid')
     uniqueXc = sort(unique(xc));
-    nodeScaleF = (uniqueXc(2)-uniqueXc(1))/2;
+    nodeScaleF = 2/3;
+    if numel(uniqueXc) > 1
+        nodeScaleF = (uniqueXc(2)-uniqueXc(1))/2;
+    end
+    % Keep legend geometry independent of the marker diameter.
+    markerScaleF = getNodeScaleFactor(xc, yc, nodeScaleF, Params);
     for i = 1:length(adjM)
-        pos = [xc(i)-(0.5*nodeScaleF) yc(i)-(0.5*nodeScaleF) nodeScaleF nodeScaleF];
+        pos = [xc(i)-(0.5*markerScaleF) yc(i)-(0.5*markerScaleF) markerScaleF markerScaleF];
         if z2(i)>0
             try
                 rectangle('Position',pos,'Curvature',[1 1],'FaceColor',mycolours(ceil(length(mycolours)*((z2(i)-min(z2))/(max(z2)-min(z2)))),1:3),'EdgeColor','w','LineWidth',0.1)

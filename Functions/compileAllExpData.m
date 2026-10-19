@@ -71,9 +71,21 @@ for i = 1:length(ExpName)
      %  Exp = strcat(char(ExpName(i)),'_',Params.Date,'.mat');
      Exp = char(ExpName(i));
      
-     % Search for any .mat file with the Exp str (regardless of date)
-     ExpFPathSearchName = dir(fullfile(experimentMatFileFolder, [Exp, '_OutputData*.mat'])).name;
-     ExpFPath = fullfile(experimentMatFileFolder, ExpFPathSearchName);
+     expectedPath = fullfile(experimentMatFileFolder, ...
+         [Exp, '_', Params.outputDataFolderName, '.mat']);
+     if isfile(expectedPath)
+         ExpFPath = expectedPath;
+     else
+         candidates = dir(fullfile(experimentMatFileFolder, [Exp, '_*.mat']));
+         if isempty(candidates)
+             error('compileAllExpData:noExpFile', ...
+                 'No experiment .mat file found for %s in %s.', Exp, experimentMatFileFolder);
+         elseif numel(candidates) > 1
+             error('compileAllExpData:multipleExpFiles', ...
+                 'Multiple files match %s; expected the current run file %s.', Exp, expectedPath);
+         end
+         ExpFPath = fullfile(experimentMatFileFolder, candidates(1).name);
+     end
      expFileData = load(ExpFPath);  
      % filepath contains Info structure
      

@@ -101,7 +101,7 @@ end
 %% Left electrode plot (scaled to individual recording)
 nexttile
 uniqueXc = sort(unique(xc));
-nodeScaleF = 2/3; 
+nodeScaleF = getNodeScaleFactor(xc, yc, 2/3, Params);
 
 makeMinSpikeCountZero = 1;
 
@@ -151,6 +151,7 @@ for i = 1:length(spikeCount)
 end
 ylim([min(yc) - 1, max(yc) + 1])
 xlim([min(xc) - 1, max(xc) + 1])
+daspect([1 1 1])
 axis off
 
 cb = colorbar;
@@ -210,6 +211,7 @@ for i = 1:length(spikeCount)
 end
 ylim([min(yc)-1 max(yc)+1])
 xlim([min(xc)-1 max(xc)+1])
+daspect([1 1 1])
 axis off
 
 cb = colorbar;

@@ -223,11 +223,16 @@ nodeTypeColors = [0.8 0.902 0.310; ... % light green
 
 if strcmp(plotType,'MEA')
     uniqueXc = sort(unique(xc));
-    nodeScaleF = (uniqueXc(2)-uniqueXc(1))/2;
+    nodeScaleF = 2/3;
+    if numel(uniqueXc) > 1
+        nodeScaleF = (uniqueXc(2)-uniqueXc(1))/2;
+    end
+    % Keep legend geometry independent of the marker diameter.
+    markerScaleF = getNodeScaleFactor(xc, yc, nodeScaleF, Params);
     for i = 1:length(adjM)
             % eval(['Colour = c' num2str(NdCartDiv(i)) ';']);
             Colour = nodeTypeColors(NdCartDiv(i), :);
-            pos = [xc(i)-(0.5*nodeScaleF) yc(i)-(0.5*nodeScaleF) nodeScaleF nodeScaleF];
+            pos = [xc(i)-(0.5*markerScaleF) yc(i)-(0.5*markerScaleF) markerScaleF markerScaleF];
             rectangle('Position',pos,'Curvature',[1 1],'FaceColor',Colour,'EdgeColor','w','LineWidth',0.1)
 
         % Add channel numbers on top of the nodes

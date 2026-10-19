@@ -66,12 +66,34 @@ elseif strcmp(spreadsheet_file_type, 'csv')
         Params.channels = {};
         Params.coords = {};
         for nRecording = 1:size(csv_data, 1)
-            [channels, coords] = getCoordsFromLayout(Params.channelLayoutPerRecording{nRecording});
+            customCoordCsv = '';
+            if ismember('CustomCoords', csv_data.Properties.VariableNames)
+                customCoordCsv = char(string(csv_data.CustomCoords(nRecording)));
+                % Relative layout paths are relative to the batch spreadsheet.
+                if ~isempty(customCoordCsv) && ~isfile(customCoordCsv)
+                    customCoordCsv = fullfile(fileparts(spreadsheet_filename), customCoordCsv);
+                end
+            elseif isfield(Params, 'customCoordCsv')
+                customCoordCsv = Params.customCoordCsv;
+                if iscell(customCoordCsv)
+                    if numel(customCoordCsv) ~= size(csv_data, 1)
+                        error('MEANAP:customLayoutCount', ...
+                            'Provide one custom-coordinate CSV per selected recording.');
+                    end
+                    customCoordCsv = customCoordCsv{nRecording};
+                end
+            end
+            [channels, coords] = getCoordsFromLayout( ...
+                Params.channelLayoutPerRecording{nRecording}, customCoordCsv);
             recordingChannelData = load(fullfile(rawData, [ExpName{nRecording} '.mat']), 'channels');
             recordingChannels = recordingChannelData.channels;
-            subsetIndex = find(ismember(channels, recordingChannels));
+            [found, coordinateIndex] = ismember(recordingChannels, channels);
+            if ~all(found)
+                error('MEANAP:layoutChannelMissing', ...
+                    'Layout is missing channels from recording %s.', ExpName{nRecording});
+            end
             Params.channels{nRecording} = recordingChannels;
-            Params.coords{nRecording} = coords(subsetIndex, :);
+            Params.coords{nRecording} = coords(coordinateIndex, :);
         end
     elseif (prevParamFpathFound == 1)
         prevParamData = load(prevParamFpath);
@@ -95,4 +117,10 @@ elseif strcmp(spreadsheet_file_type, 'csv')
         end
     end
     
-end 
+end
+% Every downstream loop indexes one cell per recording, including when the
+% spreadsheet omits Ground entirely.
+if ~isfield(Params, 'electrodesToGroundPerRecording') ...
+        || isempty(Params.electrodesToGroundPerRecording)
+    Params.electrodesToGroundPerRecording = repmat({''}, numel(ExpName), 1);
+end

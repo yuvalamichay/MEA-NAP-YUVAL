@@ -11,7 +11,7 @@ clearvars -except InputParamsFilePath
 close all 
 
 % Change to MEANAP folder
-MEANAPscriptPath = which('MEApipeline.m');
+MEANAPscriptPath = mfilename('fullpath');
 MEANAPfolder = fileparts(MEANAPscriptPath);
 cd(MEANAPfolder)
 
@@ -101,13 +101,33 @@ end
 
 %% Check if ParamsFilePath is specified
 if exist('InputParamsFilePath', 'var')
-   ParamDataFile = load(InputParamsFilePath);
-   Params = ParamDataFile.Params;
-   Params.guiMode = 1;
+   if isstruct(InputParamsFilePath)
+       suppliedParams = InputParamsFilePath;
+   else
+       ParamDataFile = load(InputParamsFilePath, 'Params');
+       suppliedParams = ParamDataFile.Params;
+   end
+   % Saved GUI parameters retain GUI mode unless explicitly set to headless.
+   if ~isfield(suppliedParams, 'guiMode')
+       suppliedParams.guiMode = 1;
+   end
+   suppliedFields = fieldnames(suppliedParams);
+   for suppliedIdx = 1:numel(suppliedFields)
+       Params.(suppliedFields{suppliedIdx}) = suppliedParams.(suppliedFields{suppliedIdx});
+   end
+   if Params.guiMode == 0
+       Params.HomeDir = MEANAPfolder;
+   end
    HomeDir = Params.HomeDir;
    spreadsheet_filename = Params.spreadSheetFileName;
    rawData = Params.rawData;
    detectSpikes = Params.detectSpikes;
+   if isfield(Params, 'spikeDetectedData')
+       spikeDetectedData = Params.spikeDetectedData;
+   end
+   if isfield(Params, 'csvRange')
+       csvRange = Params.csvRange;
+   end
    option = 'list';
    Params.spikeMethodColors = ...
     [  0    0.4470    0.7410; ...
@@ -135,7 +155,14 @@ Params.Date = datestr(now,formatOut);
 clear formatOut
 
 if Params.guiMode ~= 1
+    % AdvancedSettings supplies missing defaults but must not erase the
+    % explicit analysis choices supplied by the headless caller.
+    headlessOverrides = Params;
     AdvancedSettings
+    overrideFields = fieldnames(headlessOverrides);
+    for overrideIdx = 1:numel(overrideFields)
+        Params.(overrideFields{overrideIdx}) = headlessOverrides.(overrideFields{overrideIdx});
+    end
 end 
 
 if Params.runSpikeCheckOnPrevSpikeData
@@ -275,7 +302,7 @@ if ((Params.priorAnalysis == 0) || (Params.runSpikeCheckOnPrevSpikeData)) && (Pa
         if Params.guiMode == 1
             batchDetectSpikes(rawData, savePath, option, ExpName, Params, app);
         else
-            batchDetectSpikes(rawData, savePath, option, ExpName, Params);
+            batchDetectSpikes(rawData, savePath, option, ExpName, Params, struct());
         end
     end 
     
@@ -823,7 +850,9 @@ if Params.priorAnalysis==0 || Params.priorAnalysis==1 && Params.startAnalysisSte
                         '1A_SpikeDetectedData');
                 else 
                     spikeDetectedDataFolder = spikeDetectedData;
-                end 
+                end
+            elseif detectSpikes == 0 && ~isempty(spikeDetectedData)
+                spikeDetectedDataFolder = spikeDetectedData;
             else
                 spikeDetectedDataFolder = fullfile(Params.outputDataFolder, ...
                         Params.outputDataFolderName, '1_SpikeDetection', ...

@@ -1,4 +1,4 @@
-function [channels,coords] = getCoordsFromLayout(channelLayout)
+function [channels,coords] = getCoordsFromLayout(channelLayout, customCoordCsv)
 %GETCOORDSFROMLAYOUT Specifies mapping from channel number to spatial
 %coordinates
 % We provide a few default coordinates from 
@@ -170,22 +170,33 @@ elseif strcmp(channelLayout, 'Axion16')
     end 
 
 elseif strcmp(channelLayout, 'Custom')
-    % Here you can specify your own custom channel layout by 
-    % editing the variable coords, which should have shape 
-    % numChannel x 2 
-    % where the first column is the x-coordinate of the channels
-    % and the second column is the y-coordinate of the chanenels
-    x_min = 0;
-    x_max = 1;
-    y_min = 0;
-    y_max = 1;
-    num_nodes = 64;
-    
-    rand_x_coord = (x_max - x_min) .* rand(num_nodes,1) + x_min;
-    rand_y_coord = (y_max - y_min) .* rand(num_nodes, 1) + y_min; 
-    coords = [rand_x_coord, rand_y_coord];
-
-    coords  = Params.coords * 8;
+    % Coordinates are normalized to 0-1 here; the common x8 scaling below
+    % converts them to MEA-NAP plotting units.
+    if nargin < 2 || isempty(customCoordCsv) || ~isfile(customCoordCsv)
+        error('MEANAP:customLayoutMissing', ...
+            'Set Params.customCoordCsv to a CSV with channel, x_norm and y_norm columns.');
+    end
+    coordTable = readtable(customCoordCsv);
+    required = {'channel', 'x_norm', 'y_norm'};
+    if ~all(ismember(required, coordTable.Properties.VariableNames))
+        error('MEANAP:customLayoutColumns', ...
+            'Custom layout CSV must contain channel, x_norm and y_norm columns.');
+    end
+    if ~isnumeric(coordTable.channel) || ~isnumeric(coordTable.x_norm) ...
+            || ~isnumeric(coordTable.y_norm)
+        error('MEANAP:customLayoutValues', 'Custom layout columns must be numeric.');
+    end
+    channels = coordTable.channel(:)';
+    coords = [coordTable.x_norm, coordTable.y_norm];
+    if isempty(channels) ...
+            || any(~isfinite(channels)) || any(~isfinite(coords(:))) ...
+            || numel(unique(channels)) ~= numel(channels)
+        error('MEANAP:customLayoutValues', ...
+            'Custom layout needs unique finite numeric channel IDs and finite coordinates.');
+    end
+    if any(coords(:) < 0 | coords(:) > 1)
+        error('MEANAP:customLayoutRange', 'Custom x_norm and y_norm must be between 0 and 1.');
+    end
 
 end 
 

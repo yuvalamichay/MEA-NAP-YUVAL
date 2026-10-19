@@ -66,7 +66,7 @@ end
 
 nexttile
 uniqueXc = sort(unique(xc));
-nodeScaleF = 2/3; 
+nodeScaleF = getNodeScaleFactor(xc, yc, 2/3, Params);
 
 makeMinSpikeCountZero = 1;
 
@@ -112,6 +112,7 @@ for i = 1:numChannels
 end
 ylim([min(yc) - 1, max(yc) + 1])
 xlim([min(xc) - 1, max(xc) + 1])
+daspect([1 1 1])
 
 if prctile(metricVals,99,'all') <= minSpikeCountToPlot
     cAxisMaxVal = minSpikeCountToPlot + 1;
@@ -194,6 +195,7 @@ for i = 1:numChannels
 end
 ylim([min(yc)-1 max(yc)+1])
 xlim([min(xc)-1 max(xc)+1])
+daspect([1 1 1])
 axis off
 
 colormap(cmap);
